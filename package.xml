@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
+  <name>ImportExport_3DM workbench</name>
+  <description>An external workbench for add Importer/Exporter for 3dm></description>
+  <version>0.1 Beta</version>
+  <date>2022-11-22</date>
+  <maintainer email="keith@sloan-home.co.uk">Keith Sloan</maintainer>
+  <license file="LICENSE">LGPL-2.1</license>
+  <url type="repository" branch="Main">https://github.com/KeithSloan/ImportExport_3DM</url>
+  <url type="documentation">https://github.com/KeithSloan/ImportExport_3DM/wiki</url>
+  <url type="readme">https://github.com/KeithSloan/ImportExport_3DM/blob/Main/README.md</url>
+
+  <content>
+    <workbench>
+      <classname>ImportExport_3DMWorkbench</classname>
+      <subdirectory>./</subdirectory>
+      <icon>freecad/ImportExport_3DM/Resources/icons/ImportExport_3DM.svg</icon>
+      <freecadmin>0.19.3</freecadmin>
+      <depend>rhino3dm</depend>
+    </workbench>
+  </content>
+
+</package>
