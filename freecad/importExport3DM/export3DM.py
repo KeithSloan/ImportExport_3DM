@@ -25,6 +25,8 @@ __author__ = "Keith Sloan <keith@sloan-home.co.uk>"
 __url__ = ["https://github.com/KeithSloan/ImportExport_3DM"]
 
 import FreeCAD, os, Part
+from FreeCAD import Units
+import rhino3dm as r3
 
 
 #################################
@@ -42,22 +44,94 @@ class switch(object):
 def case(*args):
     return any((arg == switch.value for arg in args))
 
-def exportDoc3DM(filepath, fileExt):
-    for obj in FreeCAD.ActiveDocument.Objects:
-        exportObj(obj, filepath)
+def initModel():
+    print("Init Model")
+    model = r3.File3dm()
+    model.ApplicationName = "ImportExport_3DM"
+    model.ApplicationUrl = "https://github.com/KeithSloan/ImportExport_3DM"
+    layer = r3.Layer()
+    layer.Name = "FC Layer"
+    model.Layers.Add(layer)
+    return model
 
+def exportDoc3DM(filepath, fileExt):
+    model = initModel()
+    for obj in FreeCAD.ActiveDocument.Objects:
+        addObjToModel(obj)
+    model.Write(filepath, 0)
 
 def export3DM(first, filepath, fileExt):
 
     print("====> Start Export 3DM 0.1")
     print("File extension : " + fileExt)
-    addObjToModel(first)
+    model = initModel()
+    addObjToModel(first, model)
     if hasattr(first, "OutList"):
         for obj in first.OutList:
-            addObjToModel(obj)
+            addObjToModel(obj, model)
+    ret = model.Write(filepath, 0)
+    print(f"File {filepath} exported rc {ret}")
 
-def addObjToModel(obj):
-    import rhino3dm
+def length(lenQuantity):
+    print(f"Len Value {Units.Quantity(lenQuantity).Value}")
+    return Units.Quantity(lenQuantity).Value
+    #return r3.Interval(0, Units.Quantity(lenQuantity).Value)
+
+
+def processNurbEdges(model, nurbs):
+    print(f"Process Nurb Edges")
+    for e in nurbs.Edges:
+        print(f"TypeId {e.TypeId}")
+        if hasattr(e, "Curve"):
+            print(f"Bezier Curve")
+            print(f"FirstParameter {e.Curve.FirstParameter}")
+            print(dir(e))
+            print(dir(e.Curve))
+            print(f"Max Degrees {e.Curve.MaxDegree}")
+            print(f"Number Knots {e.Curve.NbKnots}")
+            print(f"Number Poles {e.Curve.NbPoles}")
+
+        else:
+            print(f"Line")
+            for v in e.Vertexes:
+                print(f" x {v.X} y {v.Y} z {v.Z}")
+
+
+def processNurbSurfaces(model, nurbs):
+    print(f"Process Nurb Surfaces")
+
+
+def processNurbs(model, nurbs):
+    print(f"Process Nurbs {nurbs}")
+    if hasattr(nurbs, "Edges"):
+        if len(nurbs.Edges) > 0:
+            processNurbEdges(model, nurbs)
+    if hasattr(nurbs, "Faces"):
+        if len(nurbs.Faces) > 0:
+            processNurbSurfaces(model, nurbs)
+
+
+def curvesToNurbs(obj, model):
+    if hasattr(obj, "Shape"):
+        if hasattr(obj.Shape, "toNurbs"):
+            nurbs = obj.Shape.toNurbs()
+            processNurbs(model, nurbs)
+
+
+def checkShapeForCurves(obj, model):
+    print(f"Check Shape for Curves")
+    # return True for Now
+    return True
+
+
+def checkShape(obj, model):
+    if hasattr(obj, "Shape") == None:
+        return
+    if checkShapeForCurves(obj, model):
+        curvesToNurbs(obj, model)    
+
+
+def addObjToModel(obj, model):
 
     #print(f"{obj.TypeId}")
     while switch(obj.TypeId):
@@ -67,6 +141,7 @@ def addObjToModel(obj):
 
         if case("Part::FeaturePython"):
             print(f"Part::FeaturePython")
+            checkShape(obj, model)
             break
 
         if case("Part::Sphere"):
@@ -74,7 +149,20 @@ def addObjToModel(obj):
             break
 
         if case("Part::Box"):
-            print(f"box : ({obj.Length},{obj.Width},{obj.Height}")
+            print(f"box : ({obj.Length},{obj.Width},{obj.Height})")
+            #pln = r3.Plane.WorldXY
+            #box = r3.Box(pln,
+            box = r3.Box(r3.BoundingBox
+                 (
+                 0,
+                  length(obj.Length),
+                 0,
+                  length(obj.Width),
+                 0,
+                  length(obj.Height)
+                  ))
+            brp = r3.Brep.CreateFromBox(box)
+            model.Objects.AddBrep(brp)
             break
 
         if case("Part::Cylinder"):
