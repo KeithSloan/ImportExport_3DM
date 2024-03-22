@@ -62,7 +62,7 @@ class rhinoNurbsCurve():
         print(f"Process Nurb Edges")
         for e in FCnurbs.Edges:
             print(f"TypeId {e.TypeId}")
-            if hasattr(e, "Curve"):
+            if hasattr(e, Curve):
                 print(f"Bezier Curve")
                 print(f"FirstParameter {e.Curve.FirstParameter}")
                 print(dir(e))
@@ -136,7 +136,10 @@ def processNurbEdges(model, nurbs):
     print(f"Process Nurb Edges")
     for e in nurbs.Edges:
         print(f"TypeId {e.TypeId}")
-        if hasattr(e, "Curve"):
+        c = e.Curve
+        print(dir(e))
+        print(dir(e.Curve))
+        if hasattr(e, 'Curve'):
             print(f"Bezier Curve")
             print(f"FirstParameter {e.Curve.FirstParameter}")
             print(dir(e))
