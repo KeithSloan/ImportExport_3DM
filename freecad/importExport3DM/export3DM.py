@@ -44,32 +44,74 @@ class switch(object):
 def case(*args):
     return any((arg == switch.value for arg in args))
 
-def initModel():
-    print("Init Model")
-    model = r3.File3dm()
-    model.ApplicationName = "ImportExport_3DM"
-    model.ApplicationUrl = "https://github.com/KeithSloan/ImportExport_3DM"
-    layer = r3.Layer()
-    layer.Name = "FC Layer"
-    model.Layers.Add(layer)
-    return model
+class rhinoNurbsCurve():
+    def __init__(self, model):
+        self.model = model
+        self.ControlPoints = []
+
+    def addControlPoint(self, x, y, z):
+        cp = Point3d(x,y,z)
+        self.ControlPoints.append(cp)
+
+    def addNurbsCurve(self, degree):
+        NurbsCurve(degree, self.ControlPoints)
+        self.model.AddCurve(NurbsCurve)
+        self.ControlPoints = []
+
+    def processNurbEdges(self, FCnurbs):
+        print(f"Process Nurb Edges")
+        for e in FCnurbs.Edges:
+            print(f"TypeId {e.TypeId}")
+            if hasattr(e, "Curve"):
+                print(f"Bezier Curve")
+                print(f"FirstParameter {e.Curve.FirstParameter}")
+                print(dir(e))
+                print(dir(e.Curve))
+                print(f"Max Degrees {e.Curve.MaxDegree}")
+                print(f"Number Knots {e.Curve.NbKnots}")
+                print(f"Number Poles {e.Curve.NbPoles}")
+
+            else:
+                print(f"Line")
+
+            for v in e.Vertexes:
+                print(f" x {v.X} y {v.Y} z {v.Z}")
+                self.addControlPoint(x, y, z)
+
+        self.addNurbsCurve(3)        # degree 3
+
+
+class rhinoModel():
+    def __init__(self):
+        print("Init Model")
+        self.model = r3.File3dm()
+        self.model.ApplicationName = "ImportExport_3DM"
+        self.model.ApplicationUrl = "https://github.com/KeithSloan/ImportExport_3DM"
+        self.layer = r3.Layer()
+        self.layer.Name = "FC Layer"
+        self.model.Layers.Add(layer)
+
+
+    def write(self, filepath):
+        self.model.Write(filepath, 0)
+
 
 def exportDoc3DM(filepath, fileExt):
-    model = initModel()
+    rModel = rhinoModel()
     for obj in FreeCAD.ActiveDocument.Objects:
         addObjToModel(obj)
-    model.Write(filepath, 0)
+    rModel.Write(filepath, 0)
 
 def export3DM(first, filepath, fileExt):
 
     print("====> Start Export 3DM 0.1")
     print("File extension : " + fileExt)
-    model = initModel()
-    addObjToModel(first, model)
+    rModel = rhinoModel()
+    addObjToModel(first, rModel)
     if hasattr(first, "OutList"):
         for obj in first.OutList:
             addObjToModel(obj, model)
-    ret = model.Write(filepath, 0)
+    ret = rModel.Write(filepath, 0)
     print(f"File {filepath} exported rc {ret}")
 
 def length(lenQuantity):
