@@ -133,20 +133,19 @@ def length(lenQuantity):
 
 
 def processNurbEdges(model, nurbs):
-    print(f"Process Nurb Edges")
+    print(f"Process Nurb Edges Len {len(nurbs.Edges)}")
     for e in nurbs.Edges:
-        print(f"TypeId {e.TypeId}")
-        c = e.Curve
+        print(f"TypeId {e.TypeId} Number of Vertex {len(e.Vertexes)}")
         print(dir(e))
-        print(dir(e.Curve))
-        if hasattr(e, 'Curve'):
-            print(f"Bezier Curve")
-            print(f"FirstParameter {e.Curve.FirstParameter}")
-            print(dir(e))
-            print(dir(e.Curve))
-            print(f"Max Degrees {e.Curve.MaxDegree}")
-            print(f"Number Knots {e.Curve.NbKnots}")
-            print(f"Number Poles {e.Curve.NbPoles}")
+        if len(e.Vertexes) > 1:         # Avoid error degenerate edge
+            if hasattr(e, 'Curve'):
+                print(dir(e.Curve))
+                print(f"Bezier Curve")
+                print(f"FirstParameter {e.Curve.FirstParameter}")
+                print(dir(e))
+                print(f"Max Degrees {e.Curve.MaxDegree}")
+                print(f"Number Knots {e.Curve.NbKnots}")
+                print(f"Number Poles {e.Curve.NbPoles}")
 
         else:
             print(f"Line")
