@@ -44,51 +44,19 @@ class switch(object):
 def case(*args):
     return any((arg == switch.value for arg in args))
 
-class rhinoNurbsCurve():
-    def __init__(self, model):
-        self.model = model
-        self.ControlPoints = []
-
-    def addControlPoint(self, x, y, z):
-        cp = Point3d(x,y,z)
-        self.ControlPoints.append(cp)
-
-    def addNurbsCurve(self, degree):
-        NurbsCurve(degree, self.ControlPoints)
-        self.model.AddCurve(NurbsCurve)
-        self.ControlPoints = []
-
-    def processNurbEdges(self, FCnurbs):
-        print(f"Process Nurb Edges")
-        for e in FCnurbs.Edges:
-            print(f"TypeId {e.TypeId}")
-            if hasattr(e, Curve):
-                print(f"Bezier Curve")
-                print(f"FirstParameter {e.Curve.FirstParameter}")
-                print(dir(e))
-                print(dir(e.Curve))
-                print(f"Max Degrees {e.Curve.MaxDegree}")
-                print(f"Number Knots {e.Curve.NbKnots}")
-                print(f"Number Poles {e.Curve.NbPoles}")
-
-            else:
-                print(f"Line")
-
-            for v in e.Vertexes:
-                print(f" x {v.X} y {v.Y} z {v.Z}")
-                self.addControlPoint(x, y, z)
-
-        self.addNurbsCurve(3)        # degree 3
 
 
 class rhinoModel():
     #import rhino3dm as r3
+    #import rhino3dm
     def __init__(self):
         import rhino3dm
         print("Init Model")
         self.model = r3.File3dm()
         self.model.ApplicationName = "ImportExport_3DM"
         self.model.ApplicationUrl = "https://github.com/KeithSloan/ImportExport_3DM"
+        # Variables
+        self.ControlPoints = []
         self.layer = r3.Layer()
         self.layer.Name = "FC Layer"
         self.model.Layers.Add(self.layer)
@@ -103,6 +71,143 @@ class rhinoModel():
 
         # add brep to model
         self.model.Objects.AddBrep(brp)
+
+    def addControlPoint(self, x, y, z):
+        import rhino3dm
+        cp = r3.Point3d(x,y,z)
+        #cp = rhino3dm.Point3d(x,y,z)
+        self.ControlPoints.append(cp)
+
+    def addNurbsCurve(self, degree):
+        NurbsCurve = r3.NurbsCurve(degree, len(self.ControlPoints))
+        self.model.Objects.AddCurve(NurbsCurve)
+        self.ControlPoints = []         # reset control points
+
+    def processNurbEdges(self, nurbs):
+        print(f"Process Nurb Edges Len {len(nurbs.Edges)}")
+        valid = False
+        for e in nurbs.Edges:
+            print(f"TypeId {e.TypeId} Number of Vertex {len(e.Vertexes)}")
+            print(dir(e))
+            if len(e.Vertexes) > 1:         # Avoid error degenerate edge
+                if hasattr(e, 'Curve'):
+                    print(dir(e.Curve))
+                    print(f"Bezier Curve")
+                    print(f"FirstParameter {e.Curve.FirstParameter}")
+                    print(dir(e))
+                    print(f"Max Degrees {e.Curve.MaxDegree}")
+                    print(f"Number Knots {e.Curve.NbKnots}")
+                    print(f"Number Poles {e.Curve.NbPoles}")
+
+                for v in e.Vertexes:
+                    print(f" x {v.X} y {v.Y} z {v.Z}")
+                    self.addControlPoint(v.X, v.Y, v.Z)
+                valid = True
+
+            else:
+                print(f"Line")
+
+        if valid: self.addNurbsCurve(3)        # degree 3
+
+
+    def processNurbSurfaces(self, nurbs):
+        print(f"Process Nurb Surfaces")
+
+
+    def processNurbs(self, nurbs):
+        print(f"Process Nurbs {nurbs}")
+        if hasattr(nurbs, "Edges"):
+            if len(nurbs.Edges) > 0:
+                self.processNurbEdges(nurbs)
+        if hasattr(nurbs, "Faces"):
+            if len(nurbs.Faces) > 0:
+                self.processNurbSurfaces(nurbs)
+
+
+    def curvesToNurbs(self, obj):
+        if hasattr(obj, "Shape"):
+            if hasattr(obj.Shape, "toNurbs"):
+                nurbs = obj.Shape.toNurbs()
+                self.processNurbs(nurbs)
+
+
+    def checkShapeForCurves(self, obj):
+        print(f"Check Shape for Curves")
+        # return True for Now
+        return True
+
+
+    def checkShape(self, obj):
+        if hasattr(obj, "Shape") == None:
+            return
+        if self.checkShapeForCurves(obj):
+            self.curvesToNurbs(obj)    
+
+    def addObjToModel(self, obj):
+        #print(f"{obj.TypeId}")
+        while switch(obj.TypeId):
+            if case("App::Part"):
+                print(f"App Part : {obj.Label}")
+                break
+
+            if case("Part::FeaturePython"):
+                print(f"Part::FeaturePython")
+                self.checkShape(obj)
+                break
+
+            if case("Part::Sphere"):
+                print(f"sphere : Radius {obj.Radius}")
+                break
+
+            if case("Part::Box"):
+                print(f"box : ({obj.Length},{obj.Width},{obj.Height})")
+                #pln = r3.Plane.WorldXY
+                #box = r3.Box(pln,
+                box = r3.Box(r3.BoundingBox
+                    (
+                    0,
+                    length(obj.Length),
+                    0,
+                    length(obj.Width),
+                    0,
+                    length(obj.Height)
+                    ))
+                brp = r3.Brep.CreateFromBox(box)
+                self.model.Objects.AddBrep(brp)
+                break
+
+            if case("Part::Cylinder"):
+                print(f"cylinder : Height {obj.Height} Radius {obj.Radius}")
+                break
+
+            if case("Part::Cone"):
+                print(f"cone : Height {obj.Height} Radius1 {obj.Radius1} Radius2 {obj.Radius2}")
+                break
+
+            if case("Part::Torus"):
+                print(f"torus {obj.Radius1} {obj.Radius2}")
+                break
+
+            if case("Part::Prism"):
+                print("Prism")
+                break
+
+            if case("Part::RegularPolygon"):
+                print("RegularPolygon")
+                break
+
+            if case("Part::Extrusion"):
+                print("Extrusion")
+                break
+            
+            if case("Mesh::Feature"):
+                print("Mesh")
+                # print dir(obj.Mesh)
+                break
+
+            #print("Other")
+            #print(obj.TypeId)
+            break
 
     def write(self, filepath):
         self.model.Write(filepath, 0)
@@ -119,140 +224,18 @@ def export3DM(first, filepath, fileExt):
     print("====> Start Export 3DM 0.1")
     print("File extension : " + fileExt)
     rModel = rhinoModel()
-    addObjToModel(first, rModel)
+    rModel.addObjToModel(first)
     if hasattr(first, "OutList"):
         for obj in first.OutList:
-            addObjToModel(obj, rModel)
+            rModel.addObjToModel(obj)
     ret = rModel.write(filepath)
     print(f"File {filepath} exported rc {ret}")
+
 
 def length(lenQuantity):
     print(f"Len Value {Units.Quantity(lenQuantity).Value}")
     return Units.Quantity(lenQuantity).Value
     #return r3.Interval(0, Units.Quantity(lenQuantity).Value)
-
-
-def processNurbEdges(model, nurbs):
-    print(f"Process Nurb Edges Len {len(nurbs.Edges)}")
-    for e in nurbs.Edges:
-        print(f"TypeId {e.TypeId} Number of Vertex {len(e.Vertexes)}")
-        print(dir(e))
-        if len(e.Vertexes) > 1:         # Avoid error degenerate edge
-            if hasattr(e, 'Curve'):
-                print(dir(e.Curve))
-                print(f"Bezier Curve")
-                print(f"FirstParameter {e.Curve.FirstParameter}")
-                print(dir(e))
-                print(f"Max Degrees {e.Curve.MaxDegree}")
-                print(f"Number Knots {e.Curve.NbKnots}")
-                print(f"Number Poles {e.Curve.NbPoles}")
-
-        else:
-            print(f"Line")
-            for v in e.Vertexes:
-                print(f" x {v.X} y {v.Y} z {v.Z}")
-
-
-def processNurbSurfaces(model, nurbs):
-    print(f"Process Nurb Surfaces")
-
-
-def processNurbs(model, nurbs):
-    print(f"Process Nurbs {nurbs}")
-    if hasattr(nurbs, "Edges"):
-        if len(nurbs.Edges) > 0:
-            processNurbEdges(model, nurbs)
-    if hasattr(nurbs, "Faces"):
-        if len(nurbs.Faces) > 0:
-            processNurbSurfaces(model, nurbs)
-
-
-def curvesToNurbs(obj, model):
-    if hasattr(obj, "Shape"):
-        if hasattr(obj.Shape, "toNurbs"):
-            nurbs = obj.Shape.toNurbs()
-            processNurbs(model, nurbs)
-
-
-def checkShapeForCurves(obj, model):
-    print(f"Check Shape for Curves")
-    # return True for Now
-    return True
-
-
-def checkShape(obj, model):
-    if hasattr(obj, "Shape") == None:
-        return
-    if checkShapeForCurves(obj, model):
-        curvesToNurbs(obj, model)    
-
-
-def addObjToModel(obj, model):
-
-    #print(f"{obj.TypeId}")
-    while switch(obj.TypeId):
-        if case("App::Part"):
-            print(f"App Part : {obj.Label}")
-            break
-
-        if case("Part::FeaturePython"):
-            print(f"Part::FeaturePython")
-            checkShape(obj, model)
-            break
-
-        if case("Part::Sphere"):
-            print(f"sphere : Radius {obj.Radius}")
-            break
-
-        if case("Part::Box"):
-            print(f"box : ({obj.Length},{obj.Width},{obj.Height})")
-            #pln = r3.Plane.WorldXY
-            #box = r3.Box(pln,
-            box = r3.Box(r3.BoundingBox
-                 (
-                 0,
-                  length(obj.Length),
-                 0,
-                  length(obj.Width),
-                 0,
-                  length(obj.Height)
-                  ))
-            brp = r3.Brep.CreateFromBox(box)
-            model.Objects.AddBrep(brp)
-            break
-
-        if case("Part::Cylinder"):
-           print(f"cylinder : Height {obj.Height} Radius {obj.Radius}")
-           break
-
-        if case("Part::Cone"):
-           print(f"cone : Height {obj.Height} Radius1 {obj.Radius1} Radius2 {obj.Radius2}")
-           break
-
-        if case("Part::Torus"):
-           print(f"torus {obj.Radius1} {obj.Radius2}")
-           break
-
-        if case("Part::Prism"):
-           print("Prism")
-           break
-
-        if case("Part::RegularPolygon"):
-           print("RegularPolygon")
-           break
-
-        if case("Part::Extrusion"):
-           print("Extrusion")
-           break
-            
-        if case("Mesh::Feature"):
-           print("Mesh")
-           # print dir(obj.Mesh)
-           break
-
-        #print("Other")
-        #print(obj.TypeId)
-        break
 
 
 def export(exportList, filepath):
