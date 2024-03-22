@@ -82,15 +82,27 @@ class rhinoNurbsCurve():
 
 
 class rhinoModel():
+    #import rhino3dm as r3
     def __init__(self):
+        import rhino3dm
         print("Init Model")
         self.model = r3.File3dm()
         self.model.ApplicationName = "ImportExport_3DM"
         self.model.ApplicationUrl = "https://github.com/KeithSloan/ImportExport_3DM"
         self.layer = r3.Layer()
         self.layer.Name = "FC Layer"
-        self.model.Layers.Add(layer)
+        self.model.Layers.Add(self.layer)
+        # create box brep
+        pln = r3.Plane.WorldXY
+        #box = r3.Box( pln, rhino3dm.Interval(0,1000), \
+        #                rhino3dm.Interval(0,800), \
+        #                rhino3dm.Interval(0,500) )
+        boundBox = r3.BoundingBox(0,0,0, 1000, 800, 500)
+        box = r3.Box(boundBox)
+        brp = boundBox.ToBrep()
 
+        # add brep to model
+        self.model.Objects.AddBrep(brp)
 
     def write(self, filepath):
         self.model.Write(filepath, 0)
@@ -110,8 +122,8 @@ def export3DM(first, filepath, fileExt):
     addObjToModel(first, rModel)
     if hasattr(first, "OutList"):
         for obj in first.OutList:
-            addObjToModel(obj, model)
-    ret = rModel.Write(filepath, 0)
+            addObjToModel(obj, rModel)
+    ret = rModel.write(filepath)
     print(f"File {filepath} exported rc {ret}")
 
 def length(lenQuantity):
