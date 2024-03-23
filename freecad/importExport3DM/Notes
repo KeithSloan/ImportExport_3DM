@@ -1,0 +1,6 @@
+B-Spline Curve
+
+Number of Control points = P0 - P0 : n + 1
+Knots Vector U = u0 - um  =  m + 1
+Degree p = m - n - 1
+

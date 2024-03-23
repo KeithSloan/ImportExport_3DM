@@ -70,7 +70,7 @@ class rhinoModel():
         brp = boundBox.ToBrep()
 
         # add brep to model
-        self.model.Objects.AddBrep(brp)
+        #self.model.Objects.AddBrep(brp)
 
     def addControlPoint(self, x, y, z):
         import rhino3dm
@@ -78,12 +78,33 @@ class rhinoModel():
         #cp = rhino3dm.Point3d(x,y,z)
         self.ControlPoints.append(cp)
 
-    def addNurbsCurve(self, degree):
-        NurbsCurve = r3.NurbsCurve(degree, len(self.ControlPoints))
-        self.model.Objects.AddCurve(NurbsCurve)
-        self.ControlPoints = []         # reset control points
+    def addNurbsCurve(self, degree, knots, mults,  poles):
+        #knotList = r3.NurbsCurveKnotList
+        #print(len(knots))
+        #for i in range(len(knots)):
+        #    if knotList.InsertKnot(float(knots[i]), int(mults[i])) == False:
+        #        print(f"Insert Knot {i} Failed")
+            
+        #NurbsCurve = r3.NurbsCurve(degree, len(self.ControlPoints))
+        polesList = []
+        print(f"Poles {poles}")
+        for p in poles:
+            polesList.append(r3.Point3d(p[0], p[1], p[2]))
+        print(f"PolesList {polesList}")
+        NurbsCurve = r3.NurbsCurve(degree, len(poles))
+        nc = NurbsCurve.Create(False, degree, polesList)
+        print(f"NurbsCure {nc}")
+        self.model.Objects.AddCurve(nc)
+        #self.model.Objects.AddCurve(NurbsCurve)
+        #self.ControlPoints = []         # reset control points
 
     def processNurbEdges(self, nurbs):
+        # B-Spline 
+        # Control Points P0-Pn = n + 1
+        # Knots u0 - um = m+1
+        # Degree = p = m - n - 1
+        # Degree = (nKn - 1)-(nCP - 1) - 1
+        # Degree = nKn - nCP - 1
         print(f"Process Nurb Edges Len {len(nurbs.Edges)}")
         valid = False
         for e in nurbs.Edges:
@@ -92,22 +113,38 @@ class rhinoModel():
             if len(e.Vertexes) > 1:         # Avoid error degenerate edge
                 if hasattr(e, 'Curve'):
                     print(dir(e.Curve))
-                    print(f"Bezier Curve")
+                    print(f"B-Spline {len(e.Vertexes)}")
                     print(f"FirstParameter {e.Curve.FirstParameter}")
                     print(dir(e))
                     print(f"Max Degrees {e.Curve.MaxDegree}")
+                    degree = e.Curve.Degree
+                    print(f"Degree {degree}")
                     print(f"Number Knots {e.Curve.NbKnots}")
+                    print(f"Knot Sequence {e.Curve.KnotSequence}")
+                    knots = e.Curve.getKnots()
+                    print(f"Knots {knots}")
+                    mults = e.Curve.getMultiplicities()
+                    print(f"Mults {mults}")
                     print(f"Number Poles {e.Curve.NbPoles}")
+                    poles = e.Curve.getPoles()
+                    print(f"Poles {poles}")
+                    print(f"Poles and Weight {e.Curve.getPolesAndWeights()}")
+                    self.addNurbsCurve(degree, knots, mults, poles)
 
+
+                print(f"Vertexes Knots?")
                 for v in e.Vertexes:
                     print(f" x {v.X} y {v.Y} z {v.Z}")
-                    self.addControlPoint(v.X, v.Y, v.Z)
+                    #self.addControlPoint(v.X, v.Y, v.Z)
                 valid = True
 
             else:
                 print(f"Line")
 
-        if valid: self.addNurbsCurve(3)        # degree 3
+        #if valid: self.addNurbsCurve(3)        # degree 3
+        #degree =  e.Curve.NbKnots - e.Curve.NbPoles - 1
+        #print(f"Degree = {degree}")
+        #if valid: self.addNurbsCurve(degree)
 
 
     def processNurbSurfaces(self, nurbs):

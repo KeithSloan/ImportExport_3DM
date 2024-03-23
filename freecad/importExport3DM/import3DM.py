@@ -375,6 +375,7 @@ class File3dm:
             weights.append(p.W)
         ku, mu = self.getFCKnots(nc.Knots)
         periodic = False  # mu[0] <= nu.Degree(0)
+        print(f"pts {pts} len {len(pts)} Degree {nc.Degree}")
         bs = Part.BSplineCurve()
         bs.buildFromPolesMultsKnots(pts, mu, ku, periodic, nc.Degree, weights)
         if mu[0] < (nc.Degree + 1):
