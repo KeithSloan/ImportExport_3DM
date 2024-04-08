@@ -78,6 +78,16 @@ class rhinoModel():
         #cp = rhino3dm.Point3d(x,y,z)
         self.ControlPoints.append(cp)
 
+    def createNurbsCurve(self, degree, poles):
+        polesList = []
+        print(f"Poles {poles}")
+        for p in poles:
+            polesList.append(r3.Point3d(p[0], p[1], p[2]))
+        print(f"PolesList {polesList}")
+        NurbsCurve = r3.NurbsCurve(degree, len(poles))
+        nc = NurbsCurve.Create(False, degree, polesList)
+        return nc
+
     def addNurbsCurve(self, degree, knots, mults,  poles):
         #knotList = r3.NurbsCurveKnotList
         #print(len(knots))
@@ -93,7 +103,7 @@ class rhinoModel():
         print(f"PolesList {polesList}")
         NurbsCurve = r3.NurbsCurve(degree, len(poles))
         nc = NurbsCurve.Create(False, degree, polesList)
-        print(f"NurbsCure {nc}")
+        print(f"NurbsCurve {nc}")
         self.model.Objects.AddCurve(nc)
         #self.model.Objects.AddCurve(NurbsCurve)
         #self.ControlPoints = []         # reset control points
@@ -105,17 +115,18 @@ class rhinoModel():
         # Degree = p = m - n - 1
         # Degree = (nKn - 1)-(nCP - 1) - 1
         # Degree = nKn - nCP - 1
-        print(f"Process Nurb Edges Len {len(nurbs.Edges)}")
+        print(f">>>>>>>>>>  Process Nurb Edges Len {len(nurbs.Edges)}")
         valid = False
+        self.curves = []
         for e in nurbs.Edges:
             print(f"TypeId {e.TypeId} Number of Vertex {len(e.Vertexes)}")
-            print(dir(e))
+            #print(dir(e))
             if len(e.Vertexes) > 1:         # Avoid error degenerate edge
                 if hasattr(e, 'Curve'):
-                    print(dir(e.Curve))
-                    print(f"B-Spline {len(e.Vertexes)}")
+                    #print(dir(e.Curve))
+                    print(f"=====  B-Spline {len(e.Vertexes)}")
                     print(f"FirstParameter {e.Curve.FirstParameter}")
-                    print(dir(e))
+                    #print(dir(e))
                     print(f"Max Degrees {e.Curve.MaxDegree}")
                     degree = e.Curve.Degree
                     print(f"Degree {degree}")
@@ -129,7 +140,7 @@ class rhinoModel():
                     poles = e.Curve.getPoles()
                     print(f"Poles {poles}")
                     print(f"Poles and Weight {e.Curve.getPolesAndWeights()}")
-                    self.addNurbsCurve(degree, knots, mults, poles)
+                    self.curves.append(self.addNurbsCurve(degree, knots, mults, poles))
 
 
                 print(f"Vertexes Knots?")
@@ -173,12 +184,101 @@ class rhinoModel():
         # return True for Now
         return True
 
+    def processSurfaceUV(self, surface):
+        print(f"=========== Process Surface UV")
+        print(dir(surface))
+        UDegree = surface.UDegree
+        UOrder = UDegree + 1
+        VDegree = surface.VDegree
+        VOrder =VDegree + 1
+        UPoles = surface.NbUPoles
+        VPoles = surface.NbVPoles
+        poles = surface.getPoles()
+        print(f"UPoles {UPoles} VPoles {VPoles}")
+        print(f"Poles {poles}")
+        print(f"Poles {len(poles)} x {len(poles[0])}")
+        print(f"Surface UDegree {UDegree} VDegree {VDegree}")
+        VKnots = surface.getVKnots()
+        UKnots = surface.getUKnots()
+        VMults = surface.getVMultiplicities()
+        UMults = surface.getUMultiplicities()
+        Ucurve = self.createNurbsCurve(UDegree, poles[0])
+        Vcurve = self.createNurbsCurve(VDegree, poles[1])
+        nurbSurf = r3.NurbsSurface.Create(3, False, UOrder, VOrder, UPoles, VPoles) 
+        #for c in range(0, len(self.curves)-1, 2):
+        #    nurbSurf.CreateRuledSurface(self.curves[c], self.curves[c+1])
+        #    self.model.Objects.AddSurface(nurbSurf)
+        #ns =  nurbSurf.CreateRuledSurface(self.curves[0], self.curves[2])
+        attr = r3.ObjectAttributes()
+        ns =  nurbSurf.CreateRuledSurface(Ucurve, Vcurve)
+        if ns is not None:
+            self.model.Objects.AddSurface(ns, attr)
+        else:
+            print(f"Invalid Ruled Surface")    
+
+
+    def processSurfaceUV3(self, surface):
+        print(f"=========== Process Surface UV")
+        plane = r3.Plane.WorldXY
+        planeSurf = r3.PlaneSurface(plane, 10, 5)
+        print(dir(planeSurf))
+        ns = planeSurface.ToNurbsSurface()
+        u_interval = r3.Interval(0.0, 15.0)
+        v_interval = r3.Interval(0.0, 7.5)
+        u_degree = 2
+        v_degree = 2
+        u_points = 10
+        v_points = 10
+        print(dir(r3.NurbsSurface))
+        srf = r3.NurbsSurface.CreateFromPlane(plane, u_interval, v_interval, u_degree, v_degree, u_points, v_points)
+        if srf and srf.IsValid:
+            return srf
+        return None
+
+
+    def processSurfaceUV2(self, surface):
+        print(f"=========== Process Surface UV")
+        plane = r3.Plane.WorldXY
+        u_interval = r3.Interval(0.0, 15.0)
+        v_interval = r3.Interval(0.0, 7.5)
+        u_degree = 2
+        v_degree = 2
+        u_points = 10
+        v_points = 10
+        print(dir(r3.NurbsSurface))
+        srf = r3.NurbsSurface.CreateFromPlane(plane, u_interval, v_interval, u_degree, v_degree, u_points, v_points)
+        if srf and srf.IsValid:
+            return srf
+        return None
+
+
+    def checkForSurfaceUV(self, face):
+        if hasattr(face, "Surface"):
+            if hasattr(face.Surface, "UDegree") and \
+               hasattr(face.Surface, "VDegree"):
+                #self.processSurfaceUV(face.Surface)
+                self.processSurfaceUV3(face.Surface)
+       
+
+    def processFaces(self, obj):
+        print(obj.Shape.Faces)
+        print(f"processFaces {len(obj.Shape.Faces)}")
+        for f in obj.Shape.Faces:
+            self.checkForSurfaceUV(f)   
 
     def checkShape(self, obj):
+        print(f"CheckShape {obj.TypeId} {obj.Name}")
         if hasattr(obj, "Shape") == None:
             return
         if self.checkShapeForCurves(obj):
-            self.curvesToNurbs(obj)    
+            self.curvesToNurbs(obj)
+        print(f"CheckShape {obj.TypeId} {obj.Name}")
+        #print(dir(obj))    
+        #print(dir(obj.Shape))    
+        self.processFaces(obj)    
+        #if self.checkShapeForSurface(obj):
+        #    self.processSurfaceUV(obj.Shape.Surface)
+
 
     def addObjToModel(self, obj):
         #print(f"{obj.TypeId}")
