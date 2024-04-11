@@ -89,6 +89,9 @@ class rhinoModel():
         return nc
 
     def addNurbsCurve(self, degree, knots, mults,  poles):
+        #
+        # Number of Knots = Number of Control Points + Degree + 1
+        #
         #knotList = r3.NurbsCurveKnotList
         #print(len(knots))
         #for i in range(len(knots)):
@@ -195,14 +198,16 @@ class rhinoModel():
         VPoles = surface.NbVPoles
         poles = surface.getPoles()
         print(f"UPoles {UPoles} VPoles {VPoles}")
-        print(f"Poles {poles}")
-        print(f"Poles {len(poles)} x {len(poles[0])}")
+        print(f"Poles {len(poles[0])} x {len(poles[1])}")
+        #print(f"Poles {poles}")
         print(f"Surface UDegree {UDegree} VDegree {VDegree}")
         VKnots = surface.getVKnots()
         UKnots = surface.getUKnots()
         VMults = surface.getVMultiplicities()
         UMults = surface.getUMultiplicities()
+        #Ucurve = self.createNurbsCurve(UDegree, UKnots)
         Ucurve = self.createNurbsCurve(UDegree, poles[0])
+        #Vcurve = self.createNurbsCurve(VDegree, VKnots)
         Vcurve = self.createNurbsCurve(VDegree, poles[1])
         nurbSurf = r3.NurbsSurface.Create(3, False, UOrder, VOrder, UPoles, VPoles) 
         #for c in range(0, len(self.curves)-1, 2):
@@ -252,12 +257,25 @@ class rhinoModel():
         return None
 
 
+    def createSpline(self, knots):
+        print(f"createSpline knots {knots}")
+        print(dir(knots))
+        spline = r3.Curve
+        #spline.CreateControlPointCurve(
+
+
     def checkForSurfaceUV(self, face):
         if hasattr(face, "Surface"):
+            print(dir(face.Surface))
+            print(f"UDegree {face.Surface.UDegree} VDegree {face.Surface.VDegree}")
+            print(f"UKnots {face.Surface.NbUKnots} VKnots {face.Surface.NbVKnots}")
             if hasattr(face.Surface, "UDegree") and \
                hasattr(face.Surface, "VDegree"):
-                #self.processSurfaceUV(face.Surface)
-                self.processSurfaceUV3(face.Surface)
+               #USpline = self.createSpline(face.Surface.NbUKnots)
+               #USpline = self.createSpline(face.Surface.getUKnots())
+               #VSpline = self.createSpline(face.Surface.NbVKnots)
+               #VSpline = self.createSpline(face.Surface.getVKnots())
+               self.processSurfaceUV(face.Surface)
        
 
     def processFaces(self, obj):
@@ -289,6 +307,11 @@ class rhinoModel():
 
             if case("Part::FeaturePython"):
                 print(f"Part::FeaturePython")
+                self.checkShape(obj)
+                break
+
+            if case("Part::Feature"):
+                print(f"Part::Feature")
                 self.checkShape(obj)
                 break
 
