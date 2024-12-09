@@ -39,6 +39,26 @@ or
      
      - restart FreeCAD
 
+
+# Installing for FreeCAD 1.0.0 on MacOS
+
+* FreeCAD 1.0.0 on Mac uses Python 3.11
+  
+  Make sure Mac is also 3.11 using homebrew
+  
+  brew instal python@3.11
+
+* install rhino3dm in FreeCAD path
+
+- Start FreeCAD
+     - In python console
+        - import sys
+        - print(sys.path)
+          
+ - python3.11 -m pip install rhino3dm  --no-cache -t '/Applications/FreeCAD 1.0.0.app/Contents/Resources/lib/python3.11/site-packages'
+
+  
+
 # Alternate Installation ( Linux )
 
  * sudo apt install python3-pip
