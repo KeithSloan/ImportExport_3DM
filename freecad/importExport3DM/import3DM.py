@@ -93,7 +93,12 @@ class File3dm:
     def import_geometry(self, doc, geo):
         print("Geometry type")
         print(type(geo))
-
+        #################################################
+        # Check instances and create FC object
+        # Some return obj others not?
+        # Think they should all return obj
+        # Need create_surface
+        #################################################
         if isinstance(geo, r3.Brep):  # str(geo.ObjectType) == "ObjectType.Brep":
             print("Brep object")
             print("is solid : {}".format(geo.IsSolid))
@@ -149,8 +154,12 @@ class File3dm:
             # print(type(geo.Arc.Center))
             obj.Placement.Base = toFCvec(geo.Arc.Center)
             obj.Radius = geo.Radius
-            obj.Angle0 = startAngle = toFCangle(geo.Arc.Center, geo.PointAtStart)
-            obj.Angle1 = startAngle + geo.Arc.AngleDegrees
+            if int(FreeCAD.Version()[3].split()[0]) > 29603:
+                obj.Angle1 = startAngle = toFCangle(geo.Arc.Center, geo.PointAtStart)
+                obj.Angle2 = startAngle + geo.Arc.AngleDegree
+            else:
+                obj.Angle0 = startAngle = toFCangle(geo.Arc.Center, geo.PointAtStart)
+                obj.Angle1 = startAngle + geo.Arc.AngleDegrees
             # print(dir(geo))
             obj.recompute()
             return obj
@@ -324,7 +333,9 @@ class File3dm:
         if isinstance(geo, r3.NurbsSurface):
             print("NurbsSurface Object")
             print(dir(geo))
-            return self.create_surface(geo)
+            obj = doc.addObject("Part::Feature", "NurbsSurface")
+            obj.Shape = self.create_nurbs_surface(geo).toShape()
+            return obj
 
         if isinstance(geo, r3.PointCloud):
             print("PointCloud Object")
@@ -363,6 +374,11 @@ class File3dm:
         nc = geo.ToNurbsCurve()
         print(dir(nc))
 
+    ##########################################
+    #
+    # Create functions return a Part Shape
+    #
+    ###########################################    
     def create_curve(self, edge):
         nc = edge.ToNurbsCurve()
         # print("{} x {}".format(nu.Degree(0), nu.Degree(1)))
@@ -375,7 +391,6 @@ class File3dm:
             weights.append(p.W)
         ku, mu = self.getFCKnots(nc.Knots)
         periodic = False  # mu[0] <= nu.Degree(0)
-        print(f"pts {pts} len {len(pts)} Degree {nc.Degree}")
         bs = Part.BSplineCurve()
         bs.buildFromPolesMultsKnots(pts, mu, ku, periodic, nc.Degree, weights)
         if mu[0] < (nc.Degree + 1):
@@ -383,6 +398,11 @@ class File3dm:
         return bs
 
     def create_surface(self, surf):
+        print(f"Create Surface")
+        print(f"ToDO")
+        # create_nurbs_surface was being called.
+
+    def create_nurbs_surface(self, surf):
         nu = surf.ToNurbsSurface()
         print("{} x {}".format(nu.Degree(0), nu.Degree(1)))
         pts = []
