@@ -68,6 +68,10 @@ or
  * git clone  https://github.com/KeithSloan/ImportNURBS.git
  * start or restart FreeCAD
  
+# Rhino - API h
+
+  ttps://developer.rhino3d.com/api/rhinocommon/
+
 # Sample Rhino files
 
   Can be downloaded from https://www.rhino3d.com/download/opennurbs/6/opennurbs6samples 
@@ -75,7 +79,11 @@ or
 # Acknowledgements
 
   * Icon design by Freepik
-  * 3dm testCases kindly supplied by Jonne Neva (cheezebreeze)
+  * 3dm testCases kindly supplied by
+      * Jonne Neva (cheezebreeze)
+      * EdWilliams
+      * Sven
+
 
 # Developers 
   
