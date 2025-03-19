@@ -36,22 +36,12 @@ import Part, Draft, math
 #  exit(0)
 
 import rhino3dm as r3
-from . import objects3DM
 
 if open.__module__ == "__builtin__":
     pythonopen = (
         open  # to distinguish python built-in open function from the one declared here
     )
 
-class switch(object):
-    value = None
-
-    def __new__(class_, value):
-        class_.value = value
-        return True
-
-def case(*args):        #make part of switch class
-        return any((arg == switch.value for arg in args))
 
 def open(filename):
     "called when freecad opens a file."
@@ -83,14 +73,6 @@ def toFCangle(center, start):
     return math.atan((start.Y - center.Y) / (start.X - center.Y)) * math.pi / 180
 
 
-def createNew3DMobject(name):
-    newobj = obj.newObject("Part::FeaturePython", name)
-    # FreeCAD can change the name i.e. hyphen to underscore
-    # So also set the Objects Label
-    newobj.Label = name
-    return newobj
-
-
 class File3dm:
     def __init__(self, path):
         self.f3dm = r3.File3dm.Read(path)
@@ -104,14 +86,13 @@ class File3dm:
             first_split = obj_fullname.split(".")
             second_split = first_split[-1].split(" ")
             print("-----------------\n{}".format(second_split[0]))
-            partShape = self.import_geometry(doc, self.f3dm.Objects[i].Geometry)
-            print(f"PartShape Id {partShape.TypeId}")
-            while switch(partShape.TypeId):
-                if case("Part.BSplineSurface"):
-                    print(f"PartBSplineSurface")
+            obj = self.import_geometry(doc, self.f3dm.Objects[i].Geometry)
+            if obj:
+                part.addObject(obj)
 
     def import_geometry(self, doc, geo):
-        print(f"Import Geometry type {type(geo)}")
+        print("Geometry type")
+        print(type(geo))
 
         if isinstance(geo, r3.Brep):  # str(geo.ObjectType) == "ObjectType.Brep":
             print("Brep object")
@@ -168,8 +149,12 @@ class File3dm:
             # print(type(geo.Arc.Center))
             obj.Placement.Base = toFCvec(geo.Arc.Center)
             obj.Radius = geo.Radius
-            obj.Angle0 = startAngle = toFCangle(geo.Arc.Center, geo.PointAtStart)
-            obj.Angle1 = startAngle + geo.Arc.AngleDegrees
+            if int(FreeCAD.Version()[3].split()[0]) > 29603:
+                obj.Angle1 = startAngle = toFCangle(geo.Arc.Center, geo.PointAtStart)
+                obj.Angle2 = startAngle + geo.Arc.AngleDegree
+            else:
+                obj.Angle0 = startAngle = toFCangle(geo.Arc.Center, geo.PointAtStart)
+                obj.Angle1 = startAngle + geo.Arc.AngleDegrees
             # print(dir(geo))
             obj.recompute()
             return obj
@@ -342,9 +327,9 @@ class File3dm:
 
         if isinstance(geo, r3.NurbsSurface):
             print("NurbsSurface Object")
-            # print(dir(geo))
+            print(dir(geo))
             obj = doc.addObject("Part::Feature", "NurbsSurface")
-            obj.Shape = self.create_surface(geo).toShape()
+            obj.Shape = self.create_nurbs_surface(geo).toShape()
             return
 
         if isinstance(geo, r3.PointCloud):
@@ -396,7 +381,6 @@ class File3dm:
             weights.append(p.W)
         ku, mu = self.getFCKnots(nc.Knots)
         periodic = False  # mu[0] <= nu.Degree(0)
-        print(f"pts {pts} len {len(pts)} Degree {nc.Degree}")
         bs = Part.BSplineCurve()
         bs.buildFromPolesMultsKnots(pts, mu, ku, periodic, nc.Degree, weights)
         if mu[0] < (nc.Degree + 1):
@@ -404,6 +388,10 @@ class File3dm:
         return bs
 
     def create_surface(self, surf):
+        print(f"create surface")
+        print(dir(surf))
+
+    def create_nurbs_surface(self, surf):
         nu = surf.ToNurbsSurface()
         print("{} x {}".format(nu.Degree(0), nu.Degree(1)))
         pts = []
@@ -515,7 +503,7 @@ def process3DM(doc, filename):
     ]
 
     fi = File3dm(filename)
-    fi.parse_objects(doc)   #  already parsed by File3dm ?
+    fi.parse_objects(doc)
     FreeCADGui.SendMsgToActiveView("ViewFit")
 
     # pathName = os.path.dirname(os.path.normpath(filename))
