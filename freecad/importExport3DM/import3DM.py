@@ -380,6 +380,12 @@ class File3dm:
     #
     ###########################################    
     def create_curve(self, edge):
+        # Curve in Rhino
+        #
+        # Abstraxt - circles, arcs, ellipses, etc
+        #
+        # curves - NurbsCurve  LineCurve, a PolylineCurve, an ArcCurve
+        #
         nc = edge.ToNurbsCurve()
         # print("{} x {}".format(nu.Degree(0), nu.Degree(1)))
         pts = []
@@ -398,11 +404,62 @@ class File3dm:
         return bs
 
     def create_surface(self, surf):
+        # Surface could be a Plane 
         print(f"Create Surface")
-        print(f"ToDO")
-        # create_nurbs_surface was being called.
+        print(dir(surf))
+        nu = surf.ToNurbsSurface()
+        print("{} x {}".format(nu.Degree(0), nu.Degree(1)))
+        pts = []
+        weights = []
+        print("Control Points")
+        print("CountU : " + str(nu.Points.CountU))
+        print("CountV : " + str(nu.Points.CountV))
+        for u in range(nu.Points.CountU):
+            row = []
+            wrow = []
+            for v in range(nu.Points.CountV):
+                p = nu.Points[u, v]
+                print(FreeCAD.Vector(p.X, p.Y, p.Z))
+                row.append(FreeCAD.Vector(p.X / p.W, p.Y / p.W, p.Z / p.W))
+                wrow.append(p.W)
+            pts.append(row)
+            weights.append(wrow)
+            print("Knots")
+        ku, mu = self.getFCKnots(nu.KnotsU)
+        kv, mv = self.getFCKnots(nu.KnotsV)
+        uperiodic = False  # mu[0] <= nu.Degree(0)
+        vperiodic = False  # mv[0] <= nu.Degree(1)
+        print(list(nu.KnotsU))
+        print("ku mu")
+        print(ku, mu)
+        print("kv mv")
+        print(kv, mv)
+        print("Flat knots")
+        vflatknots = list(nu.KnotsV)
+        print("{}\n{}".format(vflatknots, vflatknots))
+        bs = Part.BSplineSurface()
+        bs.buildFromPolesMultsKnots(
+            pts,
+            mu,
+            mv,
+            ku,
+            kv,
+            uperiodic,
+            vperiodic,
+            nu.Degree(0),
+            nu.Degree(1),
+            weights,
+        )
+        if mu[0] < (nu.Degree(0) + 1):
+            bs.setUPeriodic()
+        if mv[0] < (nu.Degree(1) + 1):
+            bs.setVPeriodic()
+        return bs
 
     def create_nurbs_surface(self, surf):
+        print(dir(surf))
+        # Already a surface ? change tu being passed nu abd
+        # change create_surface to call ??
         nu = surf.ToNurbsSurface()
         print("{} x {}".format(nu.Degree(0), nu.Degree(1)))
         pts = []
