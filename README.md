@@ -70,7 +70,7 @@ or
  
 # Rhino - API h
 
-  ttps://developer.rhino3d.com/api/rhinocommon/
+  https://developer.rhino3d.com/api/rhinocommon/
 
 # Sample Rhino files
 

@@ -100,6 +100,7 @@ class File3dm:
         # Need create_surface
         #################################################
         if isinstance(geo, r3.Brep):  # str(geo.ObjectType) == "ObjectType.Brep":
+            # Boundary Representation. A surface or polysurface along with trim curve informatio
             print("Brep object")
             print("is solid : {}".format(geo.IsSolid))
             print("is manifold : {}".format(geo.IsManifold))
@@ -107,35 +108,43 @@ class File3dm:
             print("has {} faces".format(len(geo.Faces)))
             print("has {} surfaces".format(len(geo.Surfaces)))
             print("has {} edges".format(len(geo.Edges)))
-            shapes = []
-            #for i in range(len(geo.Faces)):
-            #    print(geo.Faces[i])
-            #    s = self.create_surface(geo.Faces[i])
-            #    print(s)
-            #    shapes.append(s.toShape())
-            #    # print("Face {} has {} edges".format(i,len(geo.Faces[i].Edges)))
-            #print(dir(geo.Surfaces[0]))
-            #for i in range(len(geo.Surfaces)):
-            #    print(geo.Surfaces[i])
-            #    s = self.create_surface(geo.Surfaces[i])
-            #    print(s)
-            #    shapes.append(s.toShape())
-            for i in range(len(geo.Edges)):
-                print(geo.Edges[i])
-                s = self.create_curve(geo.Edges[i])
-                print(s)
-                shapes.append(s.toShape())
-            com = Part.Compound(shapes)
-            obj = doc.addObject("Part::Feature", "Faces")
-            obj.Shape = com
-            # 	        	shapes = []
-            # 			for i in range(len(geo.Edges)):
-            # 				#print(geo.Faces[i])
-            # 				c = self.create_curve(geo.Edges[i])
-            # 				shapes.append(c.toShape())
-            # 			com = Part.Compound(shapes)
-            # 			obj = doc.addObject("Part::Feature","Edges")
-            # 			obj.Shape = com
+            print(dir(r3))
+            print(dir(geo))
+            print(geo.ObjectType)
+            if geo.IsSurface:
+                print(f"Single surface : {len(geo.Surfaces)}")
+                obj = doc.addObject("Part::Feature", "Brep Surface")
+                obj.Shape = self.create_surface(geo.Surfaces[0]).toShape()
+            else:    
+                shapes = []
+                #for i in range(len(geo.Faces)):
+                #    print(geo.Faces[i])
+                #    s = self.create_surface(geo.Faces[i])
+                #    print(s)
+                #    shapes.append(s.toShape())
+                #    # print("Face {} has {} edges".format(i,len(geo.Faces[i].Edges)))
+                #print(dir(geo.Surfaces[0]))
+                #for i in range(len(geo.Surfaces)):
+                #    print(geo.Surfaces[i])
+                #    s = self.create_surface(geo.Surfaces[i])
+                #    print(s)
+                #    shapes.append(s.toShape())
+                for i in range(len(geo.Edges)):
+                    print(geo.Edges[i])
+                    s = self.create_curve(geo.Edges[i])
+                    print(s)
+                    shapes.append(s.toShape())
+                com = Part.Compound(shapes)
+                obj = doc.addObject("Part::Feature", "Edges")
+                obj.Shape = com
+                # 	        	shapes = []
+                # 			for i in range(len(geo.Edges)):
+                # 				#print(geo.Faces[i])
+                # 				c = self.create_curve(geo.Edges[i])
+                # 				shapes.append(c.toShape())
+                # 			com = Part.Compound(shapes)
+                # 			obj = doc.addObject("Part::Feature","Edges")
+                # 			obj.Shape = com
             return obj
 
         if isinstance(geo, r3.LineCurve):  # Must be before Curve
@@ -321,8 +330,7 @@ class File3dm:
                   #face = Part.Face(Part.Wire(poly))
                   #obj.Shape = face.extrude(FreeCAD.Vector(0.0, 0.0, height))
                   return
-             
-             
+                 
            print(geo.Profile3d)
            if geo.IsCylinder() == True :
               height = geo.PathStart.Z - geo.PathEnd.Z
@@ -416,7 +424,7 @@ class File3dm:
 
     def create_surface(self, surf):
         # Surface could be a Plane 
-        print(f"Create Surface")
+        print(f"Create Surface {surf.ObjectType}")
         print(dir(surf))
         nu = surf.ToNurbsSurface()
         print("{} x {}".format(nu.Degree(0), nu.Degree(1)))
@@ -467,11 +475,12 @@ class File3dm:
             bs.setVPeriodic()
         return bs
 
-    def create_nurbs_surface(self, surf):
-        print(dir(surf))
+    def create_nurbs_surface(self, nurbSurf):
+        #print(dir(nurbSurf))
         # Already a surface ? change tu being passed nu abd
         # change create_surface to call ??
-        nu = surf.ToNurbsSurface()
+        #nu = surf.ToNurbsSurface()
+        nu = nurbSurf
         print("{} x {}".format(nu.Degree(0), nu.Degree(1)))
         pts = []
         weights = []
