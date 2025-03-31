@@ -162,7 +162,7 @@ class rhinoModel():
 
 
     def processNurbSurfaces(self, nurbs):
-        print(f"Process Nurb Surfaces")
+        print(f"    Process Nurb Surfaces ToDo")
 
 
     def processNurbs(self, nurbs):
@@ -181,11 +181,18 @@ class rhinoModel():
                 nurbs = obj.Shape.toNurbs()
                 self.processNurbs(nurbs)
 
-
     def checkShapeForCurves(self, obj):
-        print(f"Check Shape for Curves")
+        print(f"Check Shape for Curves ToDp !!!!")
         # return True for Now
-        return True
+        return False
+
+    def checkShapeForSurface(self, obj):
+        # Just check and return True or False
+        print(f"Check Shape for Surface")
+        if hasattr(obj, "Surface"):
+            print(f"Has Surface")
+            return True
+        return False
 
     def processSurfaceUV(self, surface):
         print(f"=========== Process Surface UV")
@@ -275,28 +282,67 @@ class rhinoModel():
                #USpline = self.createSpline(face.Surface.getUKnots())
                #VSpline = self.createSpline(face.Surface.NbVKnots)
                #VSpline = self.createSpline(face.Surface.getVKnots())
-               self.processSurfaceUV(face.Surface)
+               return True
+
+    
+    def processBSplineSurface(self, obj):
+        #print(f"======== Process BSplineSurface ToDo")
+        if self.checkForSurfaceUV(obj):
+            self.processSurfaceUV(obj.Surface)
+
+
+    def processSurfacePlane(self, obj):
+        print(f"======== Process Surface Plane ToDo")
+        print(dir(obj))
        
+    def processSurface(self, obj):
+        print(f"Surface {obj.Surface}  TypeId {obj.TypeId} Typ e{type(obj.Surface)}")
+        surfType = str(obj.Surface)
+        #if surfType == "Part.BSplineSurface object":
+        #    self.processBSplineSurface(obj)
+        #    return
+        #elif surfType == "Part.Plane object":
+        #    self.processSurfacePlane(obj)
+        #    return
+        if isinstance(obj.Surface, Part.BSplineSurface):
+            self.processBSplineSurface(obj)
+            return
+        elif isinstance(obj.Surface, Part.Plane):
+            self.processSurfacePlane(obj)
+            return
+        print("===== >>>>> NOT YET HANDLED in processSurface")
+        raise TypeError("Not Yet Handled")
+    
+        #if hasattr(obj, "UPeriod") and hasattr(obj, "VPeriod"):
+        #    print(f"UPeriod {obj.UPeriod} VPeriod {obj.VPeriod}")
+        #    self.checkForSurfaceUV(f)
+        #else:
+        #    print(f"Face TypeId {obj.TypeId} ShapeType {obj.ShapeType}")
+        #    print(dir(obj))
 
     def processFaces(self, obj):
         print(obj.Shape.Faces)
         print(f"processFaces {len(obj.Shape.Faces)}")
         for f in obj.Shape.Faces:
-            self.checkForSurfaceUV(f)   
+            if self.checkShapeForSurface(f):
+                self.processSurface(f) 
+               
 
     def checkShape(self, obj):
-        print(f"CheckShape {obj.TypeId} {obj.Name}")
+        print(f"    CheckShape {obj.TypeId} {obj.Name}")
         if hasattr(obj, "Shape") == None:
+            return
+        ##### ?????? or in processFacees
+        if self.checkShapeForSurface(obj):
+            self.processSurface(obj)
             return
         if self.checkShapeForCurves(obj):
             self.curvesToNurbs(obj)
-        print(f"CheckShape {obj.TypeId} {obj.Name}")
+            return
         #print(dir(obj))    
-        #print(dir(obj.Shape))    
-        self.processFaces(obj)    
-        #if self.checkShapeForSurface(obj):
-        #    self.processSurfaceUV(obj.Shape.Surface)
-
+        #print(dir(obj.Shape))
+        print("======= >>>>> Not yet handled - process Faces")     
+        self.processFaces(obj)
 
     def addObjToModel(self, obj):
         #print(f"{obj.TypeId}")

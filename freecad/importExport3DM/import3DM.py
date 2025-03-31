@@ -28,6 +28,8 @@ import os, io, sys
 import FreeCADGui
 import Part, Draft, math
 
+from freecad.importExport3DM.objects3DM import ViewProvider
+
 # try:
 #  import rhino3dm as r3
 #
@@ -164,8 +166,15 @@ class File3dm:
         if isinstance(geo, r3.NurbsCurve):  # Must be before Curve
             print("NurbsCurve Object")
             # print(dir(geo))
-            obj = doc.addObject("Part::Feature", "NurbsCurve")
+            obj = doc.addObject("Part::FeaturePython", "NurbsCurve")
+            #obj = doc.addObject("Part::BSplineCurve", "NurbsCurve")
             obj.Shape = self.create_curve(geo).toShape()
+            #ViewProvider(obj.ViewObject)
+            ViewProvider(obj)
+            print(obj.Shape.TypeId)
+            print(obj.Shape.ShapeType)
+            print(dir(obj.Shape))
+            obj.recompute()
             return obj
 
         if isinstance(geo, r3.ArcCurve):
@@ -405,8 +414,22 @@ class File3dm:
         #
         # curves - NurbsCurve  LineCurve, a PolylineCurve, an ArcCurve
         #
+        print(dir(edge))
+        print(f"edge type = {edge.ObjectType}  IsPolyline = {edge.IsPolyline()}")
+        if hasattr(edge,"Points"):
+            print(f"Points {edge.Points}")
+        #print(f"Control Points List")
+        #cpl = edge.CreateControlPointCurve()
+        #print(dir(cpl))
+        #print(dir(edge.CreateControlPointCurve))
+        #cpc = edge.CreateControlPointCurve(edge.Points)
+        #print(f"Control Point Curve")
+        #print(dir(cpc))
+        print("Create Curve")
         nc = edge.ToNurbsCurve()
-        # print("{} x {}".format(nu.Degree(0), nu.Degree(1)))
+        #nc = edge
+        print(dir(nc))
+        print(f"nc hasattr(Polyline) {hasattr(nc, 'IsPolyline')}")
         pts = []
         weights = []
         for u in range(len(nc.Points)):
@@ -415,6 +438,7 @@ class File3dm:
             pts.append(FreeCAD.Vector(p.X / p.W, p.Y / p.W, p.Z / p.W))
             weights.append(p.W)
         ku, mu = self.getFCKnots(nc.Knots)
+        print(f"FreeCAD knots {ku} {mu}")
         periodic = False  # mu[0] <= nu.Degree(0)
         bs = Part.BSplineCurve()
         bs.buildFromPolesMultsKnots(pts, mu, ku, periodic, nc.Degree, weights)
@@ -530,6 +554,7 @@ class File3dm:
         return bs
 
     def getFCKnots(self, fknots):
+        print(f"Knots {fknots}")
         k = list(fknots)
         mults = []
         knots = list(set(k))
