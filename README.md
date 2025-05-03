@@ -76,6 +76,10 @@ or
 
   Can be downloaded from https://www.rhino3d.com/download/opennurbs/6/opennurbs6samples 
 
+# Note on testing exports with Blender 3dm Importer
+
+![Image 03-05-2025 at 21 16](https://github.com/user-attachments/assets/e29fc8f7-0ba8-4e80-b73c-7fe643e87c7e)
+
 # Acknowledgements
 
   * Icon design by Freepik
@@ -83,7 +87,6 @@ or
       * Jonne Neva (cheezebreeze)
       * EdWilliams
       * Sven
-
 
 # Developers 
   
