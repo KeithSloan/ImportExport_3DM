@@ -76,6 +76,22 @@ or
 
   Can be downloaded from https://www.rhino3d.com/download/opennurbs/6/opennurbs6samples 
 
+# Blender NURBS Export Pipeline
+
+A companion Blender extension for exporting NURBS surfaces directly to 3DM
+is available at https://github.com/KeithSloan/Blender_Export_3DM
+
+This enables a lossless Blender → 3DM → FreeCAD NURBS pipeline without
+tessellation.
+
+## What's detected on import
+
+The importer now reports geometry type diagnostics in the Report View:
+
+- **NurbsSurface** — degree, CV count, rational flag, knot counts
+- **SubD** — topology probe (flags if NURBS was not preserved by exporter)
+- **Mesh** — quad/triangle/vertex counts (flags if NURBS was not preserved)
+
 # Note on testing exports with Blender 3dm Importer
 
 ![Image 03-05-2025 at 21 16](https://github.com/user-attachments/assets/e29fc8f7-0ba8-4e80-b73c-7fe643e87c7e)

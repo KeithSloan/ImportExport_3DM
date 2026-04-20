@@ -355,12 +355,17 @@ class File3dm:
            return
 
         if isinstance(geo, r3.Mesh):
-            print("Mesh Object")
+            print("Mesh Object  \u2190 NURBS not preserved by exporter")
+            print(f'  quads={geo.Faces.QuadCount}  triangles={geo.Faces.TriangleCount}'
+                  f'  vertices={len(geo.Vertices)}')
             return self.create_mesh(doc, geo)
 
         if isinstance(geo, r3.NurbsSurface):
             print("NurbsSurface Object")
-            print(dir(geo))
+            print(f'  degree=({geo.Degree(0)},{geo.Degree(1)})'
+                  f'  cvs=({geo.Points.CountU},{geo.Points.CountV})'
+                  f'  rational={geo.IsRational}')
+            print(f'  knots U={len(list(geo.KnotsU))}  V={len(list(geo.KnotsV))}')
             obj = doc.addObject("Part::Feature", "NurbsSurface")
             obj.Shape = self.create_nurbs_surface(geo).toShape()
             return obj
@@ -375,6 +380,12 @@ class File3dm:
             print(geo.IsCylinder)
             print(geo.IsSolid)
             print(dir(geo))
+            return
+
+        if isinstance(geo, r3.SubD):
+            print("SubD Object  \u2190 NURBS not preserved by exporter")
+            print(f'  IsSolid={geo.IsSolid}  HasBrepForm={geo.HasBrepForm}')
+            self.printSubDInfo(geo)
             return
 
         print("Not yet handled")
@@ -402,11 +413,41 @@ class File3dm:
         nc = geo.ToNurbsCurve()
         print(dir(nc))
 
+    def printSubDInfo(self, geo):
+        print("SubD topology probe:")
+        # Vertices
+        for attr in ['Vertices', 'VertexCount', 'Faces', 'FaceCount',
+                     'Edges', 'EdgeCount']:
+            if hasattr(geo, attr):
+                val = getattr(geo, attr)
+                print(f'  {attr} = {val}')
+            else:
+                print(f'  {attr} : not available')
+        # Try Subdivide - does it return a finer SubD?
+        try:
+            sub2 = geo.Subdivide()
+            print(f'  Subdivide() returned: {type(sub2).__name__}')
+        except Exception as e:
+            print(f'  Subdivide() failed: {e}')
+        # Try ToBrep / ToNurbsSurface
+        for method in ['ToBrep', 'ToNurbsSurface', 'GetSurfaceBrep']:
+            if hasattr(geo, method):
+                print(f'  {method} : EXISTS')
+            else:
+                print(f'  {method} : not available')
+        # Bounding box as sanity check
+        try:
+            bb = geo.GetBoundingBox()
+            print(f'  BoundingBox min=({bb.Min.X:.3f},{bb.Min.Y:.3f},{bb.Min.Z:.3f})'
+                  f' max=({bb.Max.X:.3f},{bb.Max.Y:.3f},{bb.Max.Z:.3f})')
+        except Exception as e:
+            print(f'  GetBoundingBox() failed: {e}')
+
     ##########################################
     #
     # Create functions return a Part Shape
     #
-    ###########################################    
+    ###########################################
     def create_curve(self, edge):
         # Curve in Rhino
         #
@@ -470,16 +511,14 @@ class File3dm:
             print("Knots")
         ku, mu = self.getFCKnots(nu.KnotsU)
         kv, mv = self.getFCKnots(nu.KnotsV)
-        uperiodic = False  # mu[0] <= nu.Degree(0)
-        vperiodic = False  # mv[0] <= nu.Degree(1)
+        uperiodic = False
+        vperiodic = False
         print(list(nu.KnotsU))
         print("ku mu")
         print(ku, mu)
         print("kv mv")
         print(kv, mv)
-        print("Flat knots")
-        vflatknots = list(nu.KnotsV)
-        print("{}\n{}".format(vflatknots, vflatknots))
+        print(f"uperiodic={uperiodic}  vperiodic={vperiodic}")
         bs = Part.BSplineSurface()
         bs.buildFromPolesMultsKnots(
             pts,
@@ -493,10 +532,6 @@ class File3dm:
             nu.Degree(1),
             weights,
         )
-        if mu[0] < (nu.Degree(0) + 1):
-            bs.setUPeriodic()
-        if mv[0] < (nu.Degree(1) + 1):
-            bs.setVPeriodic()
         return bs
 
     def create_nurbs_surface(self, nurbSurf):
@@ -524,16 +559,14 @@ class File3dm:
         print("Knots")
         ku, mu = self.getFCKnots(nu.KnotsU)
         kv, mv = self.getFCKnots(nu.KnotsV)
-        uperiodic = False  # mu[0] <= nu.Degree(0)
-        vperiodic = False  # mv[0] <= nu.Degree(1)
+        uperiodic = False
+        vperiodic = False
         print(list(nu.KnotsU))
         print("ku mu")
         print(ku, mu)
         print("kv mv")
         print(kv, mv)
-        print("Flat knots")
-        vflatknots = list(nu.KnotsV)
-        print("{}\n{}".format(vflatknots, vflatknots))
+        print(f"uperiodic={uperiodic}  vperiodic={vperiodic}")
         bs = Part.BSplineSurface()
         bs.buildFromPolesMultsKnots(
             pts,
@@ -547,10 +580,6 @@ class File3dm:
             nu.Degree(1),
             weights,
         )
-        if mu[0] < (nu.Degree(0) + 1):
-            bs.setUPeriodic()
-        if mv[0] < (nu.Degree(1) + 1):
-            bs.setVPeriodic()
         return bs
 
     def getFCKnots(self, fknots):
