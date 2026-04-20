@@ -28,7 +28,6 @@ import os, io, sys
 import FreeCADGui
 import Part, Draft, math
 
-from freecad.importExport3DM.objects3DM import ViewProvider
 
 # try:
 #  import rhino3dm as r3
@@ -165,16 +164,8 @@ class File3dm:
 
         if isinstance(geo, r3.NurbsCurve):  # Must be before Curve
             print("NurbsCurve Object")
-            # print(dir(geo))
-            obj = doc.addObject("Part::FeaturePython", "NurbsCurve")
-            #obj = doc.addObject("Part::BSplineCurve", "NurbsCurve")
+            obj = doc.addObject("Part::Feature", "NurbsCurve")
             obj.Shape = self.create_curve(geo).toShape()
-            #ViewProvider(obj.ViewObject)
-            ViewProvider(obj)
-            print(obj.Shape.TypeId)
-            print(obj.Shape.ShapeType)
-            print(dir(obj.Shape))
-            obj.recompute()
             return obj
 
         if isinstance(geo, r3.ArcCurve):
