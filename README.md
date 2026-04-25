@@ -1,110 +1,130 @@
-
 # ImportExport 3DM
 
-  Add Import/Export of 3DM files to FreeCAD
+Adds Rhino `.3dm` file import and export to FreeCAD.  Geometry is read and
+written as true NURBS — control points, weights, degree, and knot vectors are
+preserved exactly, with no tessellation.
 
-##########################################################
-# Some coded added lots more to do.                      #
-# Please report any problems as Issues - Thanks          #
-##########################################################
-  
-# Requirements 
+> **FreeCAD 1.1+ required.**
 
-* rhino3dm - Open Python Rhino 3dm library 
+## Supported geometry
 
-You need to use the same version and level of Python that FreeCAD is using to
-install rhino3dm. 
+| Object type | Import | Export |
+|---|---|---|
+| NURBS Surface (BSplineSurface) | ✓ | ✓ |
+| NURBS Curve (BSplineCurve) | ✓ | ✓ |
+| Brep (multi-face solid) | ✓ | ✓ |
 
-You can find out the version FreeCAD is using by using
- 
-    FreeCAD | About freecad | Libraries 
-or
-    Looking at the heading in FreeCAD python console   
-  
-# Installation - Add on Manager
+On import, SubD and Mesh objects are detected and reported as diagnostics —
+they indicate that NURBS geometry was not preserved by the originating
+application.
 
- * The workbench is available via the FreeCAD AddonManager
- * However users may have to install rhino3dm depending on OS.
- * One suggestion
-     - Start FreeCAD
-     - In python console
-        - import sys
-        - print(sys.path)
-         
-     - Select one the the directories listed
+## Requirements
 
-       If FreeCAD 1.0.0 is using Python 3.11
-     
-       python3.11 -m pip install rhino3dm --no-cache -t [directory path]
-     
-     - restart FreeCAD
+`rhino3dm` must be installed into **FreeCAD's own Python interpreter**.
 
-
-# Installing for FreeCAD 1.1 on MacOS
-
-* FreeCAD 1.1 on Mac uses Python 3.11
+### FreeCAD 1.1 on macOS
 
 ```bash
-python3.11 -m pip install rhino3dm --no-cache -t '/Applications/FreeCAD_1.1.app/Contents/Resources/lib/python3.11/site-packages'
+python3.11 -m pip install rhino3dm --no-cache \
+  -t '/Applications/FreeCAD_1.1.app/Contents/Resources/lib/python3.11/site-packages'
 ```
 
-# Installing for FreeCAD 1.0.0 on MacOS
-
-* FreeCAD 1.0.0 on Mac uses Python 3.11
+### FreeCAD 1.0 on macOS
 
 ```bash
-python3.11 -m pip install rhino3dm --no-cache -t '/Applications/FreeCAD 1.0.0.app/Contents/Resources/lib/python3.11/site-packages'
+python3.11 -m pip install rhino3dm --no-cache \
+  -t '/Applications/FreeCAD 1.0.0.app/Contents/Resources/lib/python3.11/site-packages'
 ```
 
-  
+### Other platforms
 
-# Alternate Installation ( Linux )
+Find FreeCAD's Python interpreter path via the FreeCAD Python console:
 
- * sudo apt install python3-pip
- * pip3 install --user rhino3dm
- * Change directory to .FreeCAD/Mod   
-   i.e. with a dot
- * git clone  https://github.com/KeithSloan/ImportNURBS.git
- * start or restart FreeCAD
- 
-# Rhino - API h
+```python
+import sys; print(sys.path)
+```
 
-  https://developer.rhino3d.com/api/rhinocommon/
+Then install into one of the listed directories:
 
-# Sample Rhino files
+```bash
+python3.11 -m pip install rhino3dm --no-cache -t /path/from/sys.path
+```
 
-  Can be downloaded from https://www.rhino3d.com/download/opennurbs/6/opennurbs6samples 
+## Installation
 
-# Blender NURBS Export Pipeline
+### From the FreeCAD Addon Manager (planned)
 
-A companion Blender extension for exporting NURBS surfaces directly to 3DM
-is available at https://github.com/KeithSloan/Blender_Export_3DM
+Not yet listed.  Install manually for now.
 
-This enables a lossless Blender → 3DM → FreeCAD NURBS pipeline without
-tessellation.
+### Manual install (macOS / Linux)
 
-## What's detected on import
+```bash
+cd ~/.local/share/FreeCAD/Mod   # Linux
+# or
+cd ~/Library/Application\ Support/FreeCAD/Mod   # macOS
 
-The importer now reports geometry type diagnostics in the Report View:
+git clone https://github.com/KeithSloan/ImportExport_3DM.git
+```
+
+Restart FreeCAD.  The importers and exporters appear automatically in
+`File → Open` / `File → Import` / `File → Export`.
+
+## Usage
+
+- **Import:** `File → Open` or `File → Import` — select a `.3dm` file and
+  choose `3DM Importer` or `3DM Improved Importer` from the format dropdown.
+- **Export:** `File → Export` — choose `3DM` or `3DM Improved Exporter`.
+
+Two variants of each handler are registered:
+
+| Handler | Notes |
+|---|---|
+| `3DM Importer` | Primary importer (`import3DM.py`) |
+| `3DM Improved Importer` | Alternate importer (`improved_import3DM.py`) |
+| `3DM` exporter | Primary exporter (`export3DM.py`) |
+| `3DM Improved Exporter` | Alternate exporter (`improved_export3DM.py`) |
+
+## Import diagnostics
+
+The importer reports geometry type information in the FreeCAD Report View:
 
 - **NurbsSurface** — degree, CV count, rational flag, knot counts
-- **SubD** — topology probe (flags if NURBS was not preserved by exporter)
-- **Mesh** — quad/triangle/vertex counts (flags if NURBS was not preserved)
+- **SubD** — flags that NURBS geometry was not preserved by the originating exporter
+- **Mesh** — flags that NURBS geometry was not preserved
 
-# Note on testing exports with Blender 3dm Importer
+## Blender NURBS pipeline
 
-![Image 03-05-2025 at 21 16](https://github.com/user-attachments/assets/e29fc8f7-0ba8-4e80-b73c-7fe643e87c7e)
+A companion Blender extension exports NURBS geometry directly to `.3dm`:
 
-# Acknowledgements
+**[Blender_Export_3DM](https://github.com/KeithSloan/Blender_Export_3DM)**
 
-  * Icon design by Freepik
-  * 3dm testCases kindly supplied by
-      * Jonne Neva (cheezebreeze)
-      * EdWilliams
-      * Sven
+This enables a lossless Blender → 3DM → FreeCAD NURBS pipeline:
 
-# Developers 
-  
- * Chris Grellier
- * Keith Sloan
-  
+```
+Blender NURBS surface / Surface Psycho patch
+    ↓  Blender_Export_3DM
+.3dm file
+    ↓  ImportExport_3DM (File → Open)
+FreeCAD Part::Feature (exact BSplineSurface)
+```
+
+## Sample Rhino files
+
+Test `.3dm` files are in `testCases/`.  Additional Rhino sample files:
+<https://www.rhino3d.com/download/opennurbs/6/opennurbs6samples>
+
+Rhino API reference: <https://developer.rhino3d.com/api/rhinocommon/>
+
+## Acknowledgements
+
+- Icon design by Freepik
+- Test cases kindly supplied by Jonne Neva (cheezebreeze), EdWilliams, Sven
+
+## Developers
+
+- Chris Grellier
+- Keith Sloan
+
+## License
+
+GNU Lesser General Public License v2.1 — see [LICENSE](LICENSE).
