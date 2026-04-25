@@ -2,7 +2,7 @@
 <package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
   <name>ImportExport_3DM</name>
   <description>Import and export Rhino 3DM files in FreeCAD. Supersedes the ImportNURBS workbench, adding 3DM export support alongside the existing NURBS importer.</description>
-  <icon>freecad/importExport3DM/Resources/icons/ImportExport_3DMworkbench.svg</icon>
+  <icon>freecad/importExport3DM/Resources/icons/ImportExport_3DM.svg</icon>
   <version>0.2</version>
   <date>2026-04-20</date>
   <maintainer email="keith@sloan-home.co.uk">Keith Sloan</maintainer>
