@@ -1,1 +1,1 @@
-pylibs=rhino3dm
+pylibs=rhino3dm>=8.0.0

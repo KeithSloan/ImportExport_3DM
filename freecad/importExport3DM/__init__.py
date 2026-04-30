@@ -1,7 +1,8 @@
-import FreeCAD
-print(f"Set Importer and exporter for 3dm")
-FreeCAD.addImportType("3DM Importer (*.3dm)","freecad.importExport3DM.import3DM")
-FreeCAD.addImportType("3DM Improved Importer (*.3dm)","freecad.importExport3DM.improved_import3DM")
-FreeCAD.addExportType("3DM (*.3dm)","freecad.importExport3DM.export3DM")
-FreeCAD.addExportType("3DM Improved Exporter (*.3dm)","freecad.importExport3DM.improved_export3DM")
-#FreeCAD.addExportType("3DM (*.3DM)","freecad.importExport3DM.export3DM")
+import FreeCAD, os
+FreeCAD.Console.PrintMessage("ImportExport_3DM: registering 3DM import/export handlers\n")
+FreeCAD.addImportType("3DM (*.3dm)", "freecad.importExport3DM.import3DM")
+FreeCAD.addExportType("3DM (*.3dm)", "freecad.importExport3DM.export3DM")
+# improved_import3DM.py and improved_export3DM.py retired — unregistered
+
+# GUI initialisation (preferences page registration) is handled by init_gui.py,
+# which FreeCAD executes during the pkgutil-based second GUI init phase.

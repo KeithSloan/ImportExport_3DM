@@ -1,96 +1,101 @@
 # ImportExport 3DM
 
-Adds Rhino `.3dm` file import and export to FreeCAD.  Geometry is read and
+FreeCAD Import/Export module for Rhino `.3dm` files.  Geometry is read and
 written as true NURBS — control points, weights, degree, and knot vectors are
 preserved exactly, with no tessellation.
 
-> **FreeCAD 1.1+ required.**
+> **FreeCAD 1.1+ and rhino3dm ≥ 8.0.0 required.**
 
 ## Supported geometry
 
-| Object type | Import | Export |
-|---|---|---|
-| NURBS Surface (BSplineSurface) | ✓ | ✓ |
-| NURBS Curve (BSplineCurve) | ✓ | ✓ |
-| Brep (multi-face solid) | ✓ | ✓ |
+### Import
 
-On import, SubD and Mesh objects are detected and reported as diagnostics —
-they indicate that NURBS geometry was not preserved by the originating
-application.
+| rhino3dm type | FreeCAD result |
+|---|---|
+| Brep (multi-face solid) | `Part::Feature` via OCCT |
+| NurbsSurface | `Part::Feature` with BSplineSurface shell |
+| NurbsCurve | `Part::Feature` with BSplineCurve wire |
+| SubD | Diagnostic only — NURBS not preserved by originating app |
+| Mesh | Diagnostic only — NURBS not preserved by originating app |
+
+### Export
+
+| FreeCAD surface type | 3DM output |
+|---|---|
+| BSplineSurface | NURBS surface (control points, knots, weights copied exactly) |
+| Plane | NURBS surface via OCC `toNurbs()` |
+| Cylinder | Native `r3.Cylinder` primitive (or NURBS fallback) |
+| Cone | Native `r3.Cone` primitive (or NURBS fallback) |
+| Sphere | Native `r3.Sphere` primitive (or NURBS fallback) |
+| Torus | Native `r3.Torus` primitive (or NURBS fallback) |
+| Other analytic surfaces | NURBS via OCC `toNurbs()` / `toBSpline()` |
+
+The native-primitives behaviour is controlled by a Preferences option (see
+below).
+
+## Export preferences
+
+Open **Edit → Preferences → Import-Export → ImportExport 3DM**:
+
+| Option | Default | Effect |
+|---|---|---|
+| Export Cylinder / Cone / Sphere / Torus as native primitives | On | Writes analytic surfaces as exact rhino3dm primitives — preserves the analytic shape and produces smaller files.  When off, OCC converts them to NURBS approximations. |
 
 ## Requirements
 
-`rhino3dm` must be installed into **FreeCAD's own Python interpreter**.
+`rhino3dm` ≥ 8.0.0 must be installed into **FreeCAD's own Python interpreter**.
 
 ### FreeCAD 1.1 on macOS
 
 ```bash
-python3.11 -m pip install rhino3dm --no-cache \
-  -t '/Applications/FreeCAD_1.1.app/Contents/Resources/lib/python3.11/site-packages'
-```
-
-### FreeCAD 1.0 on macOS
-
-```bash
-python3.11 -m pip install rhino3dm --no-cache \
-  -t '/Applications/FreeCAD 1.0.0.app/Contents/Resources/lib/python3.11/site-packages'
+/Applications/FreeCAD_1.1.app/Contents/Resources/bin/python \
+  -m pip install "rhino3dm>=8.0.0"
 ```
 
 ### Other platforms
 
-Find FreeCAD's Python interpreter path via the FreeCAD Python console:
+Find FreeCAD's Python interpreter via the FreeCAD Python console:
 
 ```python
-import sys; print(sys.path)
+import sys; print(sys.executable)
 ```
 
-Then install into one of the listed directories:
+Then install:
 
 ```bash
-python3.11 -m pip install rhino3dm --no-cache -t /path/from/sys.path
+/path/to/freecad/python -m pip install "rhino3dm>=8.0.0"
 ```
 
 ## Installation
 
-### From the FreeCAD Addon Manager (planned)
-
-Not yet listed.  Install manually for now.
-
 ### Manual install (macOS / Linux)
 
 ```bash
-cd ~/.local/share/FreeCAD/Mod   # Linux
-# or
 cd ~/Library/Application\ Support/FreeCAD/Mod   # macOS
+# or
+cd ~/.local/share/FreeCAD/Mod                    # Linux
 
 git clone https://github.com/KeithSloan/ImportExport_3DM.git
 ```
 
-Restart FreeCAD.  The importers and exporters appear automatically in
+Restart FreeCAD.  The importers and exporter appear automatically in
 `File → Open` / `File → Import` / `File → Export`.
+
+### From the FreeCAD Addon Manager
+
+Not yet listed — install manually for now.
 
 ## Usage
 
 - **Import:** `File → Open` or `File → Import` — select a `.3dm` file and
-  choose `3DM Importer` or `3DM Improved Importer` from the format dropdown.
-- **Export:** `File → Export` — choose `3DM` or `3DM Improved Exporter`.
+  choose `3DM` from the format dropdown.
+- **Export:** `File → Export` — choose `3DM`.
 
-Two variants of each handler are registered:
+## Report View diagnostics
 
-| Handler | Notes |
-|---|---|
-| `3DM Importer` | Primary importer (`import3DM.py`) |
-| `3DM Improved Importer` | Alternate importer (`improved_import3DM.py`) |
-| `3DM` exporter | Primary exporter (`export3DM.py`) |
-| `3DM Improved Exporter` | Alternate exporter (`improved_export3DM.py`) |
-
-## Import diagnostics
-
-The importer reports geometry type information in the FreeCAD Report View:
-
-- **NurbsSurface** — degree, CV count, rational flag, knot counts
-- **SubD** — flags that NURBS geometry was not preserved by the originating exporter
-- **Mesh** — flags that NURBS geometry was not preserved
+Version and progress information is printed to the FreeCAD Report View during
+import and export.  The module version and rhino3dm version are printed at
+module load time.
 
 ## Blender NURBS pipeline
 
@@ -106,6 +111,8 @@ Blender NURBS surface / Surface Psycho patch
 .3dm file
     ↓  ImportExport_3DM (File → Open)
 FreeCAD Part::Feature (exact BSplineSurface)
+    ↓  KS_CurvesWB Import commands (optional)
+Editable NurbsSurfaceFP / NurbsCurveFP objects
 ```
 
 ## Sample Rhino files
@@ -117,13 +124,12 @@ Rhino API reference: <https://developer.rhino3d.com/api/rhinocommon/>
 
 ## Acknowledgements
 
-- Icon design by Freepik
 - Test cases kindly supplied by Jonne Neva (cheezebreeze), EdWilliams, Sven
 
 ## Developers
 
-- Chris Grellier
 - Keith Sloan
+- Chris Grellier
 
 ## License
 
