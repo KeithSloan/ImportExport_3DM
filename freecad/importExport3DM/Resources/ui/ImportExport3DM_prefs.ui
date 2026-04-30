@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ImportExport3DM_Preferences</class>
+ <widget class="QWidget" name="ImportExport3DM_Preferences">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>450</width><height>360</height></rect>
+  </property>
+  <property name="windowTitle">
+   <string>3DM</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QGroupBox" name="grpExport">
+     <property name="title"><string>Export Options</string></property>
+     <layout class="QVBoxLayout" name="grpExportLayout">
+      <item>
+       <widget class="QCheckBox" name="ExportNativePrimitives">
+        <property name="text">
+         <string>Export Cylinder, Cone, Sphere, Torus as 3DM native primitives</string>
+        </property>
+        <property name="toolTip">
+         <string>When checked: analytic surfaces are written as exact rhino3dm native
+objects (Cylinder, Cone, Sphere, Torus). Produces smaller files but
+can cause incorrect trimming on re-import for fillet faces — see warning.
+
+When unchecked (default): all surfaces are converted to bounded NURBS
+via face.toNurbs() before export. Trims correctly on re-import.</string>
+        </property>
+        <property name="checked"><bool>false</bool></property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="lblNativePrimitivesWarning">
+        <property name="visible"><bool>false</bool></property>
+        <property name="text">
+         <string>⚠ Warning: native primitives can cause incorrect trimming on
+re-import for fillet faces (Sphere/Cone/Cylinder/Torus).
+Analytic surfaces export an unbounded full primitive; if any
+boundary edge is degenerate (e.g. a sphere pole seam) it is
+skipped, and the re-import gap-filler trims the wrong region.
+Use native primitives only for standalone (non-fillet) shapes.</string>
+        </property>
+        <property name="wordWrap"><bool>true</bool></property>
+        <property name="styleSheet">
+         <string>color: #b05000; font-style: italic;</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grpImport">
+     <property name="title"><string>Import Options</string></property>
+     <layout class="QVBoxLayout" name="grpImportLayout">
+      <item>
+       <widget class="QCheckBox" name="ImportCreateGroups">
+        <property name="text">
+         <string>Create FreeCAD groups from 3DM groups</string>
+        </property>
+        <property name="toolTip">
+         <string>When checked (default): objects that belong to a named group in the
+.3dm file are placed inside a matching App::DocumentObjectGroup in
+FreeCAD. This mirrors the group structure from Rhino.
+
+When unchecked: all imported objects are placed directly inside the
+top-level Part with no sub-grouping.</string>
+        </property>
+        <property name="checked"><bool>true</bool></property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation"><enum>Qt::Vertical</enum></property>
+     <property name="sizeHint" stdset="0">
+      <size><width>20</width><height>40</height></size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <connections>
+  <connection>
+   <sender>ExportNativePrimitives</sender>
+   <signal>toggled(bool)</signal>
+   <receiver>lblNativePrimitivesWarning</receiver>
+   <slot>setVisible(bool)</slot>
+   <hints>
+    <hint type="sourcelabel"><x>-1</x><y>-1</y></hint>
+    <hint type="destinationlabel"><x>-1</x><y>-1</y></hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>
