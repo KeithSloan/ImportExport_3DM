@@ -69,6 +69,25 @@ top-level Part with no sub-grouping.</string>
         <property name="checked"><bool>true</bool></property>
        </widget>
       </item>
+      <item>
+       <widget class="QCheckBox" name="ImportMakeShell">
+        <property name="text">
+         <string>Try to make shell/solid from imported surfaces</string>
+        </property>
+        <property name="toolTip">
+         <string>When checked: after collecting all NurbsSurface patches for a group
+(or all ungrouped surfaces), attempt Part.makeShell() to stitch them
+into a single shell object.  If the shell closes, Part.makeSolid() is
+also attempted.  Falls back to individual surface objects if stitching
+fails.
+
+Works best when the exported .3dm was created with "Group all surfaces"
+enabled in the Blender Export NURBS 3DM dialog, so that all patches for
+a model arrive in the same 3DM group.</string>
+        </property>
+        <property name="checked"><bool>false</bool></property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

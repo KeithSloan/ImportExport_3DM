@@ -22,24 +22,56 @@ preserved exactly, with no tessellation.
 
 | FreeCAD surface type | 3DM output |
 |---|---|
-| BSplineSurface | NURBS surface (control points, knots, weights copied exactly) |
+| BSplineSurface | NURBS surface — control points, **rational weights**, knots copied exactly |
 | Plane | NURBS surface via OCC `toNurbs()` |
-| Cylinder | Native `r3.Cylinder` primitive (or NURBS fallback) |
-| Cone | Native `r3.Cone` primitive (or NURBS fallback) |
-| Sphere | Native `r3.Sphere` primitive (or NURBS fallback) |
-| Torus | Native `r3.Torus` primitive (or NURBS fallback) |
+| Cylinder | Rational NURBS surface (exact); native `r3.Cylinder` optional (see preferences) |
+| Cone | Rational NURBS surface (exact); native `r3.Cone` optional |
+| Sphere | Rational NURBS surface (exact); native `r3.Sphere` optional |
+| Torus | Rational NURBS surface (exact); native `r3.Torus` optional |
 | Other analytic surfaces | NURBS via OCC `toNurbs()` / `toBSpline()` |
 
-The native-primitives behaviour is controlled by a Preferences option (see
-below).
+Whole objects are traversed correctly: selecting an **App::Part**, a
+**PartDesign Body**, or a group exports all the geometry nested inside it. The
+final solid of a PartDesign Body is exported once.
 
-## Export preferences
+**NURBS fidelity.** Rational geometry (cylinders, cones, spheres, tori, and any
+circular edges) is written with its true control-point weights, so circles stay
+circular on re-import. Periodic (closed) surfaces and curves are converted to
+clamped form first, and circular/arc edges are written as exact degree-2
+rational arcs rather than polyline approximations.
+
+The native-primitives behaviour is controlled by a Preferences option (see
+below; it is **off by default** because the bounded-NURBS path round-trips trim
+boundaries more reliably).
+
+## Preferences
 
 Open **Edit → Preferences → Import-Export → ImportExport 3DM**:
 
 | Option | Default | Effect |
 |---|---|---|
-| Export Cylinder / Cone / Sphere / Torus as native primitives | On | Writes analytic surfaces as exact rhino3dm primitives — preserves the analytic shape and produces smaller files.  When off, OCC converts them to NURBS approximations. |
+| Export Cylinder / Cone / Sphere / Torus as native primitives | **Off** | When on, writes analytic surfaces as exact rhino3dm primitives (smaller files). When off (default), they are written as exact bounded rational NURBS, which reconstructs trimmed faces more reliably on re-import. |
+| **Import: create groups** | **On** | Mirrors each named `.3dm` group as an `App::DocumentObjectGroup` so an object's faces and boundary curves stay together. |
+| Import: try to make shell/solid | Off | After collecting a group's surfaces, attempt `Part.makeShell()` (and `makeSolid()` if closed); falls back to individual surfaces. |
+
+### Controlling the imported tree structure — *Import: create groups*
+
+This is the option to reach for if you don't want the grouped tree layout.
+
+- **On (default):** every named group in the `.3dm` becomes an
+  `App::DocumentObjectGroup`. Useful when each exported object carries its own
+  group, but it can produce a group that wraps a single same-named object.
+- **Off:** no container objects are created. Surfaces are placed directly under
+  the top-level `Part` and keep their own names; boundary curves are labelled
+  `{groupName}_{curveName}` so the association stays visible without nesting.
+
+Set it from the preferences page, or from the Python console:
+
+```python
+FreeCAD.ParamGet(
+    "User parameter:BaseApp/Preferences/Mod/ImportExport_3DM"
+).SetBool("ImportCreateGroups", False)
+```
 
 ## Requirements
 
@@ -121,6 +153,27 @@ Test `.3dm` files are in `testCases/`.  Additional Rhino sample files:
 <https://www.rhino3d.com/download/opennurbs/6/opennurbs6samples>
 
 Rhino API reference: <https://developer.rhino3d.com/api/rhinocommon/>
+
+## Changes
+
+### 0.3.0
+
+- **Export now traverses containers.** Selecting an `App::Part`, a PartDesign
+  Body, or a group exports all nested geometry (previously such selections could
+  produce a nearly empty file). The whole selection list is exported, not just
+  the first object.
+- **Rational weights preserved.** NURBS surfaces and curves are written with
+  their true control-point weights and created as rational where needed, so
+  cylinders, cones, spheres, tori and circular profiles no longer come back with
+  straight/flattened edges.
+- **Exact rational arcs.** Circular and arc edges are exported as exact degree-2
+  rational arcs instead of high-degree polynomial approximations.
+- **Periodic geometry handled.** Closed surfaces/curves are converted to clamped
+  form before writing.
+- **Import: degenerate trimmed faces fall back to the untrimmed surface.** When
+  trim reconstruction produces an invalid, zero-area face, the importer repairs
+  it or falls back to the (valid, correctly curved) untrimmed surface rather than
+  leaving a collapsed face. (import3DM 0.1.13)
 
 ## Acknowledgements
 

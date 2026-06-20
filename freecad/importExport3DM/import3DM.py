@@ -23,7 +23,7 @@
 # *                                                                        *
 # **************************************************************************
 
-__version__ = "0.1.12"
+__version__ = "0.1.13"
 
 import FreeCAD
 import os, io, sys
@@ -283,6 +283,46 @@ def _gap_close_wire(wire):
 
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _add_as_shell(doc, add_fn, shapes, labels, label='Shell'):
+    """Try to stitch *shapes* into a Part shell (and solid if closed).
+
+    *add_fn* is called with the resulting Part::Feature.  If stitching fails,
+    individual NurbsSurface features are added instead so nothing is lost.
+
+    *label* is used as the object label for the shell/solid or as a prefix
+    for the fallback individual objects.
+    """
+    result_shape = None
+    try:
+        shell = Part.makeShell(shapes)
+        try:
+            solid = Part.makeSolid(shell)
+            result_shape = solid
+            FreeCAD.Console.PrintMessage(
+                f'  {label}: solid from {len(shapes)} surfaces\n')
+        except Exception:
+            result_shape = shell
+            FreeCAD.Console.PrintMessage(
+                f'  {label}: shell from {len(shapes)} surfaces'
+                f' (could not close into solid)\n')
+    except Exception as e:
+        FreeCAD.Console.PrintMessage(
+            f'  {label}: makeShell failed ({e})'
+            f' — importing {len(shapes)} surfaces individually\n')
+
+    if result_shape is not None:
+        obj = doc.addObject('Part::Feature', label)
+        obj.Shape = result_shape
+        obj.Label = label
+        add_fn(obj)
+    else:
+        for shape, lbl in zip(shapes, labels):
+            obj = doc.addObject('Part::Feature', 'NurbsSurface')
+            obj.Shape = shape
+            obj.Label = lbl
+            add_fn(obj)
+
+
 if open.__module__ == "__builtin__":
     pythonopen = (
         open  # to distinguish python built-in open function from the one declared here
@@ -495,6 +535,32 @@ class File3dm:
             if fc_shape.isNull():
                 return None
 
+            # The reconstructed face often comes back without valid pcurves —
+            # a zero-area, invalid face.  Simple wires still render acceptably,
+            # but irregularly-trimmed faces (mixed arc/line/blend boundaries)
+            # collapse and display as straight/flat patches.  Try to repair the
+            # face; if it is still degenerate, signal a fallback to the untrimmed
+            # surface, which is valid and correctly curved (the exporter already
+            # segments each surface to the exact face extent).
+            def _degenerate(shp):
+                try:
+                    return shp.isNull() or (not shp.isValid()) or shp.Area < 1e-6
+                except Exception:
+                    return True
+
+            if _degenerate(fc_shape):
+                try:
+                    fixed = fc_shape.copy()
+                    fixed.fix(1e-6, 1e-6, 1e-6)
+                    if not _degenerate(fixed):
+                        fc_shape = fixed
+                except Exception:
+                    pass
+
+            if _degenerate(fc_shape):
+                self._trim_fail = "reconstructed face invalid / zero-area"
+                return None
+
             obj = doc.addObject("Part::Feature", "NurbsSurface")
             obj.Shape = fc_shape
             # Record gap-closing so it shows up in the parse_objects summary
@@ -510,9 +576,14 @@ class File3dm:
         if not doc:
             doc = FreeCAD.newDocument("3dm import")
 
-        # Preference: create FreeCAD groups mirroring 3DM groups
+        # Preferences
         prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/ImportExport_3DM")
         create_groups = prefs.GetBool("ImportCreateGroups", True)
+        # When True: after collecting all NurbsSurface faces for a group (or
+        # all ungrouped surfaces), attempt Part.makeShell() to stitch them into
+        # a single shell, and Part.makeSolid() if the shell closes.  Falls back
+        # to individual face objects if stitching fails.
+        make_shell = prefs.GetBool("ImportMakeShell", False)
 
         # Build a map from rhino group index → group name
         grp_names = {}
@@ -610,15 +681,39 @@ class File3dm:
 
         part = doc.addObject("App::Part", "Part")
 
-        # ── Ungrouped objects — import as before ──────────────────────────────
+        # ── Ungrouped objects ─────────────────────────────────────────────────
+        # When make_shell is on, NurbsSurface objects are collected into
+        # deferred lists and stitched after the loop; all other geometry
+        # (curves, meshes, etc.) is imported as usual.
+        ungrouped_surf_shapes = []
+        ungrouped_surf_labels = []
+
         for r3_obj in ungrouped_list:
-            obj = self.import_geometry(doc, r3_obj.Geometry)
+            geo = r3_obj.Geometry
+            obj_name = r3_obj.Attributes.Name
+
+            if make_shell and isinstance(geo, r3.NurbsSurface):
+                try:
+                    shape = self.create_nurbs_surface(geo).toShape()
+                    if not shape.isNull():
+                        ungrouped_surf_shapes.append(shape)
+                        ungrouped_surf_labels.append(obj_name or 'NurbsSurface')
+                except Exception as e:
+                    FreeCAD.Console.PrintMessage(
+                        f'  Shell: could not build {obj_name or "surface"}: {e}\n')
+                continue  # do not add to doc individually
+
+            obj = self.import_geometry(doc, geo)
             if not obj:
                 continue
-            obj_name = r3_obj.Attributes.Name
             if obj_name:
                 obj.Label = obj_name
             part.addObject(obj)
+
+        # Stitch ungrouped surfaces into a shell/solid (or fall back individually)
+        if ungrouped_surf_shapes:
+            _add_as_shell(doc, part.addObject, ungrouped_surf_shapes,
+                          ungrouped_surf_labels, label='Ungrouped')
 
         # ── Grouped objects — segment each group into surface+curve runs ──────
         for gi, r3_objs in group_seqs.items():
@@ -663,14 +758,34 @@ class File3dm:
                 else:
                     part.addObject(obj)
 
-            # Process surface+curve runs — attempt trim reconstruction
+            # Process surface+curve runs.
+            # When make_shell is on: collect raw surface shapes and stitch after
+            # the loop — no trim reconstruction, no individual doc.addObject calls.
+            # When make_shell is off: existing trim-reconstruction / individual path.
             trim_ok = trim_fail = 0
             fail_reasons = {}   # reason → count
             self._trim_gap_closed = 0
+            group_surf_shapes = []
+            group_surf_labels = []
+
             for surf_r3obj, curve_r3objs in runs:
                 surf_attrs = surf_r3obj.Attributes
                 surf_label = surf_attrs.Name if surf_attrs.Name else gname
 
+                if make_shell:
+                    # Collect surface shape; skip trim curves and doc.addObject
+                    try:
+                        shape = self.create_nurbs_surface(
+                            surf_r3obj.Geometry).toShape()
+                        if not shape.isNull():
+                            group_surf_shapes.append(shape)
+                            group_surf_labels.append(surf_label)
+                    except Exception as e:
+                        FreeCAD.Console.PrintMessage(
+                            f'  Shell: could not build {surf_label}: {e}\n')
+                    continue
+
+                # ── existing path ─────────────────────────────────────────────
                 obj = None
                 if curve_r3objs and _PYTHONOCC:
                     self._trim_fail = ""
@@ -702,7 +817,7 @@ class File3dm:
                     obj.Label = surf_label
                     _add(obj)
 
-            if trim_ok or trim_fail:
+            if not make_shell and (trim_ok or trim_fail):
                 gap_total = getattr(self, '_trim_gap_closed', 0)
                 gap_note  = f" ({gap_total} gap-closed)" if gap_total else ""
                 FreeCAD.Console.PrintMessage(
@@ -714,6 +829,11 @@ class File3dm:
                     FreeCAD.Console.PrintMessage(
                         f"    x{count}: {reason}\n"
                     )
+
+            # Stitch collected surfaces (make_shell path)
+            if group_surf_shapes:
+                _add_as_shell(doc, _add, group_surf_shapes,
+                              group_surf_labels, label=gname)
 
             # Process standalone objects in this group (non-NurbsSurface)
             for r3_obj in standalones:
@@ -730,7 +850,15 @@ class File3dm:
     def import_geometry(self, doc, geo):
         if isinstance(geo, r3.Brep):
             if geo.IsSurface:
+                # Untrimmed single-face Brep — use the surface directly.
                 obj = doc.addObject("Part::Feature", "Brep Surface")
+                obj.Shape = self.create_surface(geo.Surfaces[0]).toShape()
+            elif len(geo.Surfaces) == 1:
+                # Single-face trimmed Brep (e.g. created by
+                # rhino3dm Brep.CreateFromSurface).  Import the underlying
+                # surface rather than falling through to edge extraction,
+                # which would produce a wireframe rectangle instead of a face.
+                obj = doc.addObject("Part::Feature", "NurbsSurface")
                 obj.Shape = self.create_surface(geo.Surfaces[0]).toShape()
             else:
                 shapes = []

@@ -23,7 +23,7 @@
 __title__   = "FreeCAD - ImportExport 3DM Module"
 __author__  = "Keith Sloan <keith@sloan-home.co.uk>"
 __url__     = ["https://github.com/KeithSloan/ImportExport_3DM"]
-__version__ = "0.2.14"
+__version__ = "0.3.0"
 
 import FreeCAD, os, Part, traceback
 from FreeCAD import Units
@@ -117,55 +117,14 @@ class rhinoModel():
             attrs.AddToGroup(self._group_idx)
         return attrs
 
-    def addControlPoint(self, x, y, z):
-        import rhino3dm
-        cp = r3.Point3d(x,y,z)
-        #cp = rhino3dm.Point3d(x,y,z)
-        self.ControlPoints.append(cp)
-
-    def createNurbsCurve(self, degree, poles):
-        polesList = []
-        for p in poles:
-            # getPoles() returns FreeCAD.Vector objects (.x/.y/.z);
-            # curve poles from getPoles() may be tuples — handle both
-            if hasattr(p, 'x'):
-                polesList.append(r3.Point3d(p.x, p.y, p.z))
-            else:
-                polesList.append(r3.Point3d(p[0], p[1], p[2]))
-        if len(polesList) < degree + 1:
-            FreeCAD.Console.PrintMessage(f"  createNurbsCurve: {len(polesList)} poles insufficient for degree {degree}\n")
-            return None
-        NurbsCurve = r3.NurbsCurve(degree, len(polesList))
-        nc = NurbsCurve.Create(False, degree, polesList)
-        return nc
-
-    def addNurbsCurve(self, degree, knots, mults, poles):
-        polesList = []
-        for p in poles:
-            if hasattr(p, 'x'):
-                polesList.append(r3.Point3d(p.x, p.y, p.z))
-            else:
-                polesList.append(r3.Point3d(p[0], p[1], p[2]))
-        NurbsCurve = r3.NurbsCurve(degree, len(polesList))
-        nc = NurbsCurve.Create(False, degree, polesList)
-        self.model.Objects.AddCurve(nc, self._makeAttrs())
-
     def processNurbEdges(self, nurbs):
-        valid = False
         self.curves = []
         for e in nurbs.Edges:
             if len(e.Vertexes) > 1:         # Avoid error degenerate edge
-                if hasattr(e, 'Curve'):
-                    degree = e.Curve.Degree
-                    knots = e.Curve.getKnots()
-                    mults = e.Curve.getMultiplicities()
-                    poles = e.Curve.getPoles()
-                    self.curves.append(self.addNurbsCurve(degree, knots, mults, poles))
-                valid = True
-        #if valid: self.addNurbsCurve(3)        # degree 3
-        #degree =  e.Curve.NbKnots - e.Curve.NbPoles - 1
-        #print(f"Degree = {degree}")
-        #if valid: self.addNurbsCurve(degree)
+                nc = self._edgeToNurbsCurve3D(e)   # weight-preserving, exact arcs
+                if nc is not None:
+                    self.model.Objects.AddCurve(nc, self._makeAttrs())
+                    self.curves.append(nc)
 
 
     def processNurbSurfaces(self, nurbs):
@@ -194,121 +153,139 @@ class rhinoModel():
         # Just check and return True or False
         return hasattr(obj, "Surface")
 
-    def processSurfaceUV(self, surface):
-        UDegree = surface.UDegree
-        UOrder = UDegree + 1
-        VDegree = surface.VDegree
-        VOrder = VDegree + 1
-        UPoles = surface.NbUPoles
-        VPoles = surface.NbVPoles
+    # ------------------------------------------------------------------
+    # Weight-preserving NURBS builders
+    #
+    # rhino3dm control points are HOMOGENEOUS: a Point4d(x, y, z, w) has the
+    # Euclidean location (x/w, y/w, z/w).  To place a control point at the
+    # Euclidean pole P with weight w you must write Point4d(P.x*w, P.y*w, P.z*w, w)
+    # AND create the surface/curve as rational, otherwise the weights are
+    # ignored.  The previous code created everything non-rational with all
+    # weights forced to 1.0, which turned the rational profiles of cylinders,
+    # cones, spheres and circles (degree-2 with weight ~0.707 corner points)
+    # into rounded-square / straight-sided approximations.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _expandKnots(knots, mults):
+        """Expand FreeCAD (knots, multiplicities) into a flat sequence and drop
+        the first and last entry for rhino3dm's convention
+        (rhino knot count = nPoles + degree - 1)."""
+        seq = []
+        for k, m in zip(knots, mults):
+            seq.extend([k] * int(m))
+        return seq[1:-1]
+
+    @staticmethod
+    def _xyz(p):
+        if hasattr(p, 'x'):
+            return p.x, p.y, p.z
+        return p[0], p[1], p[2]
+
+    def _makeR3Surface(self, surface):
+        """Build an r3.NurbsSurface from a Part.BSplineSurface, preserving
+        rational weights.  Returns the surface or None on failure."""
+        # rhino3dm NURBS use a clamped (non-periodic) knot vector.  A periodic /
+        # closed FreeCAD surface — e.g. a full 360° cylinder, sphere or torus —
+        # stores its poles and knots in periodic form, so the clamped knot
+        # expansion below (drop first & last) would not match the pole count and
+        # the surface would collapse to a distorted, straight-sided patch.
+        # Convert any periodic direction to clamped form first (on a copy, so the
+        # caller's geometry is left untouched).
+        try:
+            if surface.isUPeriodic() or surface.isVPeriodic():
+                surface = surface.copy()
+                if surface.isUPeriodic():
+                    surface.setUNotPeriodic()
+                if surface.isVPeriodic():
+                    surface.setVNotPeriodic()
+        except Exception as e:
+            FreeCAD.Console.PrintMessage(f"  setNotPeriodic (surface) failed: {e}\n")
+        UDegree, VDegree = surface.UDegree, surface.VDegree
+        UPoles, VPoles   = surface.NbUPoles, surface.NbVPoles
         poles = surface.getPoles()
-        # poles[u][v] — shape is UPoles x VPoles
-        if VDegree == 1 and VPoles == 2:
-            # Ruled surface: two boundary U-curves at V=0 and V=VPoles-1
-            # Each rail has UPoles points and runs at UDegree
-            rail0 = [poles[u][0]          for u in range(UPoles)]
-            rail1 = [poles[u][VPoles - 1] for u in range(UPoles)]
-            curve0 = self.createNurbsCurve(UDegree, rail0)
-            curve1 = self.createNurbsCurve(UDegree, rail1)
-            if curve0 is None or curve1 is None:
-                FreeCAD.Console.PrintMessage(f"  processSurfaceUV: ruled surface rail creation failed\n")
-                return
-            nurbSurf = r3.NurbsSurface.Create(3, False, UOrder, VOrder, UPoles, VPoles)
-            ns = nurbSurf.CreateRuledSurface(curve0, curve1)
-            if ns is not None:
-                self.model.Objects.AddSurface(ns, self._makeAttrs())
-            else:
-                FreeCAD.Console.PrintMessage(f"  processSurfaceUV: CreateRuledSurface returned None\n")
-        else:
-            self.processSurfaceUVGeneral(surface, UDegree, UOrder, VDegree, VOrder,
-                                         UPoles, VPoles, poles)
+        try:
+            weights = surface.getWeights()       # [u][v]
+        except Exception:
+            weights = None
 
-    def processSurfaceUVGeneral(self, surface, UDegree, UOrder, VDegree, VOrder,
-                                UPoles, VPoles, poles):
-        """General BSpline surface: set all control points and knots directly.
-        Requires rhino3dm >= 8.0.0 for NurbsSurfacePointList.SetPoint."""
-        nurbSurf = r3.NurbsSurface.Create(3, False, UOrder, VOrder, UPoles, VPoles)
-        if nurbSurf is None:
-            FreeCAD.Console.PrintMessage(f"  NurbsSurface.Create failed UOrder={UOrder} VOrder={VOrder} "
-                  f"UPoles={UPoles} VPoles={VPoles}\n")
-            return
+        rational = False
+        if weights is not None:
+            for row in weights:
+                if any(abs(w - 1.0) > 1e-9 for w in row):
+                    rational = True
+                    break
 
-        # Control points — poles[u][v]
-        pts = nurbSurf.Points
+        ns = r3.NurbsSurface.Create(3, rational, UDegree + 1, VDegree + 1,
+                                    UPoles, VPoles)
+        if ns is None:
+            FreeCAD.Console.PrintMessage(
+                f"  NurbsSurface.Create failed (U{UDegree}/{UPoles} "
+                f"V{VDegree}/{VPoles})\n")
+            return None
+
+        pts = ns.Points
         for u in range(UPoles):
             for v in range(VPoles):
-                p = poles[u][v]
-                pt = r3.Point3d(p.x, p.y, p.z) if hasattr(p, 'x') \
-                     else r3.Point3d(p[0], p[1], p[2])
-                # Try each known API variant for setting a control point.
-                # The diagnostic print above will show what's available.
-                # rhino3dm 8.x: __setitem__ takes a (u, v) tuple with Point4d
-                pts[u, v] = r3.Point4d(pt.X, pt.Y, pt.Z, 1.0)
+                x, y, z = self._xyz(poles[u][v])
+                w = weights[u][v] if (rational and weights is not None) else 1.0
+                pts[u, v] = r3.Point4d(x * w, y * w, z * w, w)
 
-        # Knot vectors: expand FreeCAD (knots + mults), then drop first and last
-        # for rhino3dm's convention (rhino count = nPoles + degree - 1)
-        def expandKnots(knots, mults):
-            seq = []
-            for k, m in zip(knots, mults):
-                seq.extend([k] * int(m))
-            return seq[1:-1]     # drop first and last
+        for i, k in enumerate(self._expandKnots(surface.getUKnots(),
+                                                surface.getUMultiplicities())):
+            ns.KnotsU[i] = k
+        for i, k in enumerate(self._expandKnots(surface.getVKnots(),
+                                                surface.getVMultiplicities())):
+            ns.KnotsV[i] = k
+        return ns
 
-        uSeq = expandKnots(surface.getUKnots(), surface.getUMultiplicities())
-        vSeq = expandKnots(surface.getVKnots(), surface.getVMultiplicities())
+    def _makeR3Curve(self, bs):
+        """Build an r3.NurbsCurve from a Part.BSplineCurve, preserving rational
+        weights.  Returns the curve or None on failure."""
+        # Clamp periodic (closed) curves — e.g. a full circle — for rhino3dm's
+        # non-periodic knot convention (see _makeR3Surface).
+        try:
+            if bs.isPeriodic():
+                bs = bs.copy()
+                bs.setNotPeriodic()
+        except Exception as e:
+            FreeCAD.Console.PrintMessage(f"  setNotPeriodic (curve) failed: {e}\n")
+        poles = bs.getPoles()
+        n = len(poles)
+        if n < 2:
+            return None
+        degree = bs.Degree
+        try:
+            weights = bs.getWeights()
+        except Exception:
+            weights = None
+        rational = bool(weights) and any(abs(w - 1.0) > 1e-9 for w in weights)
 
-        for i, k in enumerate(uSeq):
-            nurbSurf.KnotsU[i] = k
-        for i, k in enumerate(vSeq):
-            nurbSurf.KnotsV[i] = k
+        crv = r3.NurbsCurve(3, rational, degree + 1, n)
+        for i, p in enumerate(poles):
+            x, y, z = self._xyz(p)
+            w = weights[i] if (rational and weights is not None) else 1.0
+            crv.Points[i] = r3.Point4d(x * w, y * w, z * w, w)
 
-        self.model.Objects.AddSurface(nurbSurf, self._makeAttrs())
+        for i, k in enumerate(self._expandKnots(bs.getKnots(),
+                                                bs.getMultiplicities())):
+            crv.Knots[i] = k
+        return crv
 
-
-    def processSurfaceUV3(self, surface):
-        FreeCAD.Console.PrintMessage(f"=========== Process Surface UV\n")
-        plane = r3.Plane.WorldXY
-        planeSurf = r3.PlaneSurface(plane, 10, 5)
-        ns = planeSurface.ToNurbsSurface()
-        u_interval = r3.Interval(0.0, 15.0)
-        v_interval = r3.Interval(0.0, 7.5)
-        u_degree = 2
-        v_degree = 2
-        u_points = 10
-        v_points = 10
-        srf = r3.NurbsSurface.CreateFromPlane(plane, u_interval, v_interval, u_degree, v_degree, u_points, v_points)
-        if srf and srf.IsValid:
-            return srf
-        return None
-
-
-    def processSurfaceUV2(self, surface):
-        FreeCAD.Console.PrintMessage(f"=========== Process Surface UV\n")
-        plane = r3.Plane.WorldXY
-        u_interval = r3.Interval(0.0, 15.0)
-        v_interval = r3.Interval(0.0, 7.5)
-        u_degree = 2
-        v_degree = 2
-        u_points = 10
-        v_points = 10
-        srf = r3.NurbsSurface.CreateFromPlane(plane, u_interval, v_interval, u_degree, v_degree, u_points, v_points)
-        if srf and srf.IsValid:
-            return srf
-        return None
-
-
-    def createSpline(self, knots):
-        spline = r3.Curve
-        #spline.CreateControlPointCurve(
-
+    def processSurfaceUV(self, surface):
+        """Export a Part.BSplineSurface as an r3.NurbsSurface (weights kept).
+        The former special-case ruled-surface branch was removed: it rebuilt
+        cylinder rails non-rationally (dropping the circular weights) which is
+        exactly what made cylinders come back with straight edges."""
+        ns = self._makeR3Surface(surface)
+        if ns is not None:
+            self.model.Objects.AddSurface(ns, self._makeAttrs())
+        else:
+            FreeCAD.Console.PrintMessage("  processSurfaceUV: surface build failed\n")
 
     def checkForSurfaceUV(self, face):
         if hasattr(face, "Surface"):
             if hasattr(face.Surface, "UDegree") and \
                hasattr(face.Surface, "VDegree"):
-               #USpline = self.createSpline(face.Surface.NbUKnots)
-               #USpline = self.createSpline(face.Surface.getUKnots())
-               #VSpline = self.createSpline(face.Surface.NbVKnots)
-               #VSpline = self.createSpline(face.Surface.getVKnots())
                return True
 
     
@@ -580,44 +557,73 @@ class rhinoModel():
     # ------------------------------------------------------------------
 
     def _bsplineSurfaceToR3(self, surface):
-        """Convert a Part.BSplineSurface to r3.NurbsSurface.
-        Shares logic with processSurfaceUVGeneral but returns the object."""
-        UDegree = surface.UDegree
-        VDegree = surface.VDegree
-        UPoles  = surface.NbUPoles
-        VPoles  = surface.NbVPoles
-        poles   = surface.getPoles()
+        """Convert a Part.BSplineSurface to a (weight-preserving) r3.NurbsSurface."""
+        return self._makeR3Surface(surface)
 
-        ns = r3.NurbsSurface.Create(3, False, UDegree + 1, VDegree + 1, UPoles, VPoles)
-        if ns is None:
+    def _arcEdgeToR3(self, edge, crv):
+        """Build an EXACT rational degree-2 r3.NurbsCurve for a circular edge.
+
+        FreeCAD's Circle/Arc.toBSpline() returns a high-degree (≈8) *non-rational*
+        polynomial approximation.  That curve does not lie exactly on the rational
+        cylinder surface, so on re-import the trim wire can't close cleanly and the
+        importer bridges the gap with a straight segment — the "straight edge".
+
+        The exact representation is the textbook NURBS arc: split into ≤90°
+        segments, each a degree-2 rational Bézier with the middle control point at
+        the tangent intersection and weight cos(half-angle)."""
+        import math
+        try:
+            C = crv.Center
+            r = crv.Radius
+            t0 = edge.FirstParameter
+            t1 = edge.LastParameter
+        except Exception:
+            return None
+        total = t1 - t0
+        if not (total > 1e-9) or not (r > 0):
             return None
 
-        pts = ns.Points
-        for u in range(UPoles):
-            for v in range(VPoles):
-                p = poles[u][v]
-                if hasattr(p, 'x'):
-                    pts[u, v] = r3.Point4d(p.x, p.y, p.z, 1.0)
-                else:
-                    pts[u, v] = r3.Point4d(p[0], p[1], p[2], 1.0)
+        nseg = max(1, int(math.ceil(total / (math.pi / 2) - 1e-9)))
+        dt = total / nseg
+        half = dt / 2.0
+        wmid = math.cos(half)
+        if wmid < 1e-6:
+            return None
 
-        def _expand(knots, mults):
-            seq = []
-            for k, m in zip(knots, mults):
-                seq.extend([k] * int(m))
-            return seq[1:-1]
+        def val(t):
+            p = crv.value(t)
+            return (p.x, p.y, p.z)
 
-        for i, k in enumerate(_expand(surface.getUKnots(), surface.getUMultiplicities())):
-            ns.KnotsU[i] = k
-        for i, k in enumerate(_expand(surface.getVKnots(), surface.getVMultiplicities())):
-            ns.KnotsV[i] = k
+        poles = [(*val(t0), 1.0)]
+        for i in range(nseg):
+            a = t0 + i * dt
+            m = a + half
+            b = a + dt
+            mx, my, mz = val(m)
+            # tangent-intersection control point: C + (Pm - C) / cos(half)
+            poles.append((C.x + (mx - C.x) / wmid,
+                          C.y + (my - C.y) / wmid,
+                          C.z + (mz - C.z) / wmid, wmid))
+            poles.append((*val(b), 1.0))
 
-        return ns
+        n = len(poles)                      # 2*nseg + 1
+        crv3 = r3.NurbsCurve(3, True, 3, n)  # dim 3, rational, order 3 (degree 2)
+        for i, (x, y, z, w) in enumerate(poles):
+            crv3.Points[i] = r3.Point4d(x * w, y * w, z * w, w)
+        # Clamped knots; interior segment boundaries carry multiplicity 2.
+        knots = [0.0, 0.0]
+        for i in range(1, nseg):
+            knots.append(float(i) / nseg)
+            knots.append(float(i) / nseg)
+        knots.extend([1.0, 1.0])            # count = n + 1 (= n + degree - 1)
+        for i, k in enumerate(knots):
+            crv3.Knots[i] = k
+        return crv3
 
     def _edgeToNurbsCurve3D(self, edge):
-        """Convert a FreeCAD edge to a 3D r3.NurbsCurve (poles only — knots
-        are recalculated by rhino3dm, which is accurate for degree-1 and
-        sufficient for trimming purposes)."""
+        """Convert a FreeCAD edge to a 3D r3.NurbsCurve.
+        Order of preference: exact rational arc (circles/arcs) → weight-preserving
+        BSpline → discretised polyline."""
         # Some edges (degenerate, surface-bounded, or unknown type) raise when
         # accessing .Curve — catch here and fall back to discretisation.
         crv = None
@@ -626,32 +632,56 @@ class rhinoModel():
         except Exception:
             pass
 
-        if crv is not None and isinstance(crv, Part.BSplineCurve):
-            poles = crv.getPoles()
-            rh_pts = [r3.Point3d(p.x, p.y, p.z) for p in poles]
-            degree = min(crv.Degree, len(rh_pts) - 1)
-        else:
-            # Line, Arc, Circle, undefined type, etc. — discretise to a polyline
+        # Exact rational arc for circular edges (Circle/Arc carry Center+Radius+Axis;
+        # ellipses have MajorRadius/MinorRadius, not Radius, so they are excluded).
+        if (crv is not None and not isinstance(crv, Part.BSplineCurve)
+                and hasattr(crv, 'Center') and hasattr(crv, 'Radius')
+                and hasattr(crv, 'Axis')):
             try:
-                pts = edge.discretize(32)
-                rh_pts = [r3.Point3d(p.x, p.y, p.z) for p in pts]
-            except Exception:
-                if crv is not None:
-                    try:
-                        t0, t1 = edge.FirstParameter, edge.LastParameter
-                        pts = [crv.value(t0 + (t1 - t0) * i / 31) for i in range(32)]
-                        rh_pts = [r3.Point3d(p.x, p.y, p.z) for p in pts]
-                    except Exception:
-                        return None
-                else:
-                    return None
-            degree = 1
+                arc = self._arcEdgeToR3(edge, crv)
+                if arc is not None and arc.IsValid:
+                    return arc
+            except Exception as e:
+                FreeCAD.Console.PrintMessage(f"  exact arc build failed: {e}\n")
 
-        if len(rh_pts) < degree + 1:
-            degree = len(rh_pts) - 1
-        if degree < 1 or len(rh_pts) < 2:
+        # Preferred path: get an exact (possibly rational) BSpline for the edge
+        # and build a weight-preserving NurbsCurve.
+        bs = None
+        if isinstance(crv, Part.BSplineCurve):
+            bs = crv
+        elif crv is not None and hasattr(crv, 'toBSpline'):
+            try:
+                bs = crv.toBSpline(edge.FirstParameter, edge.LastParameter)
+            except Exception:
+                try:
+                    bs = crv.toBSpline()
+                except Exception:
+                    bs = None
+        if bs is not None:
+            try:
+                rh = self._makeR3Curve(bs)
+                if rh is not None and rh.IsValid:
+                    return rh
+            except Exception as e:
+                FreeCAD.Console.PrintMessage(f"  edge BSpline build failed: {e}\n")
+
+        # Fallback: discretise to a degree-1 polyline
+        try:
+            pts = edge.discretize(64)
+            rh_pts = [r3.Point3d(p.x, p.y, p.z) for p in pts]
+        except Exception:
+            if crv is not None:
+                try:
+                    t0, t1 = edge.FirstParameter, edge.LastParameter
+                    pts = [crv.value(t0 + (t1 - t0) * i / 63) for i in range(64)]
+                    rh_pts = [r3.Point3d(p.x, p.y, p.z) for p in pts]
+                except Exception:
+                    return None
+            else:
+                return None
+        if len(rh_pts) < 2:
             return None
-        return r3.NurbsCurve.Create(False, degree, rh_pts)
+        return r3.NurbsCurve.Create(False, 1, rh_pts)
 
     def _edgeToUVCurve(self, edge, fc_surface):
         """Build an approximate UV trim curve for an edge on a surface.
@@ -898,10 +928,78 @@ class rhinoModel():
             return
         self.processFaces(obj)
 
-    def addObjToModel(self, obj):
-        # Create a named group for this FreeCAD object so all its faces/curves
-        # are grouped together in the .3dm file under obj.Label.
-        label = getattr(obj, "Label", None) or getattr(obj, "Name", None) or ""
+    # TypeIds that are *containers*: they hold other objects but carry no
+    # exportable solid of their own — recurse into their children instead.
+    _CONTAINER_TYPES = (
+        "App::Part",
+        "App::Link",
+        "App::LinkGroup",
+        "App::DocumentObjectGroup",
+        "Std::Part",
+    )
+
+    # Helper / datum objects that have no exportable solid geometry.
+    _SKIP_TYPES = (
+        "App::Origin",
+        "App::OriginGroup",
+        "App::Line",
+        "App::Plane",
+        "App::OriginFeature",
+        "PartDesign::Plane",
+        "PartDesign::Line",
+        "PartDesign::Point",
+        "PartDesign::CoordinateSystem",
+        "Sketcher::SketchObject",
+    )
+
+    def _children(self, obj):
+        """Children to recurse into for a container object.
+        Prefer .Group (clean list of contained objects, excludes Origin),
+        fall back to .OutList."""
+        grp = getattr(obj, "Group", None)
+        if grp:
+            return grp
+        return getattr(obj, "OutList", []) or []
+
+    def addObjToModel(self, obj, visited=None):
+        """Export obj's geometry (recursing into container objects).
+
+        The previous implementation switched on a fixed whitelist of TypeIds
+        (Part::Feature, Part::FeaturePython and a few primitives) and only ever
+        looked at the first selected object plus its direct OutList.  Any
+        document whose geometry lived inside a PartDesign Body or a nested
+        App::Part therefore produced an almost-empty .3dm, because the
+        Body/feature TypeIds matched no case and the container was never
+        descended into.
+
+        This version:
+          * recurses into container objects (App::Part, App::Link, groups …),
+          * exports a PartDesign::Body's final solid exactly once (Body.Shape),
+          * exports any other object that exposes a real (non-null) Shape,
+        with a visited-set guard so shared/linked objects aren't exported twice.
+        """
+        if visited is None:
+            visited = set()
+        name = getattr(obj, "Name", None)
+        if name is not None:
+            if name in visited:
+                return
+            visited.add(name)
+
+        tid = getattr(obj, "TypeId", "")
+
+        # --- skip pure helper/datum objects --------------------------------
+        if tid in self._SKIP_TYPES:
+            return
+
+        # --- containers: recurse into children, export nothing directly ----
+        if tid in self._CONTAINER_TYPES:
+            for child in self._children(obj):
+                self.addObjToModel(child, visited)
+            return
+
+        # --- set up a named group for this object's geometry ---------------
+        label = getattr(obj, "Label", None) or name or ""
         self._current_label = label
         if label:
             grp = r3.Group()
@@ -911,40 +1009,43 @@ class rhinoModel():
         else:
             self._group_idx = -1
 
-        while switch(obj.TypeId):
-            if case("App::Part"):
-                break
+        # --- PartDesign Body: export the resulting solid only --------------
+        # Iterating the Body's individual features (Pad, Pocket, Fillet …)
+        # would export many overlapping intermediate solids; Body.Shape is the
+        # final result.
+        if tid == "PartDesign::Body":
+            self.checkShape(obj)
+            return
 
-            if case("Part::FeaturePython"):
+        # --- Part::Box fast path: exact box brep ---------------------------
+        if tid == "Part::Box":
+            box = r3.Box(r3.BoundingBox(
+                0, 0, 0,
+                length(obj.Length),
+                length(obj.Width),
+                length(obj.Height)))
+            brp = r3.Brep.CreateFromBox(box)
+            self.model.Objects.AddBrep(brp, self._makeAttrs())
+            return
+
+        # --- meshes are not handled ----------------------------------------
+        if tid == "Mesh::Feature":
+            return
+
+        # --- anything else with a real Shape: export its faces/curves ------
+        shape = getattr(obj, "Shape", None)
+        if shape is not None:
+            try:
+                empty = shape.isNull()
+            except Exception:
+                empty = False
+            if not empty:
                 self.checkShape(obj)
-                break
+                return
 
-            if case("Part::Feature"):
-                self.checkShape(obj)
-                break
-
-            if case("Part::Sphere", "Part::Cylinder", "Part::Cone", "Part::Torus"):
-                # Primitive solids — export via their faces
-                self.checkShape(obj)
-                break
-
-            if case("Part::Box"):
-                box = r3.Box(r3.BoundingBox(
-                    0, length(obj.Length),
-                    0, length(obj.Width),
-                    0, length(obj.Height)))
-                brp = r3.Brep.CreateFromBox(box)
-                self.model.Objects.AddBrep(brp, self._makeAttrs())
-                break
-
-            if case("Part::Prism", "Part::RegularPolygon", "Part::Extrusion"):
-                self.checkShape(obj)
-                break
-
-            if case("Mesh::Feature"):
-                break
-
-            break
+        # --- last resort: object had no shape but may hold children --------
+        for child in self._children(obj):
+            self.addObjToModel(child, visited)
 
     def write(self, filepath):
         self.model.Write(filepath, 0)
@@ -952,17 +1053,26 @@ class rhinoModel():
 
 def exportDoc3DM(filepath, fileExt):
     rModel = rhinoModel()
-    for obj in FreeCAD.ActiveDocument.Objects:
-        addObjToModel(obj)
-    rModel.Write(filepath, 0)
+    visited = set()
+    # Export only top-level objects; addObjToModel recurses into containers,
+    # so iterating every document object would double-export their children.
+    for obj in FreeCAD.ActiveDocument.RootObjects:
+        rModel.addObjToModel(obj, visited)
+    rModel.write(filepath)
 
-def export3DM(first, filepath, fileExt):
-    FreeCAD.Console.PrintMessage(f"Export 3DM {__version__}: {first.Label}\n")
+def export3DM(exportList, filepath, fileExt):
     rModel = rhinoModel()
-    rModel.addObjToModel(first)
-    if hasattr(first, "OutList"):
-        for obj in first.OutList:
-            rModel.addObjToModel(obj)
+    # FreeCAD passes a list of the selected objects (or, with nothing selected,
+    # the document's objects). Export them all; addObjToModel recurses into any
+    # container (App::Part, PartDesign::Body, …) so geometry nested inside is
+    # found rather than silently dropped.
+    if not isinstance(exportList, (list, tuple)):
+        exportList = [exportList]
+    labels = ", ".join(getattr(o, "Label", "?") for o in exportList)
+    FreeCAD.Console.PrintMessage(f"Export 3DM {__version__}: {labels}\n")
+    visited = set()
+    for obj in exportList:
+        rModel.addObjToModel(obj, visited)
     rModel.write(filepath)
     FreeCAD.Console.PrintMessage(f"Written: {filepath}\n")
 def length(lenQuantity):
@@ -974,8 +1084,7 @@ def export(exportList, filepath):
     "called when FreeCAD exports a file"
     import os
 
-    first = exportList[0]
     path, fileExt = os.path.splitext(filepath)
     if fileExt.lower() == ".3dm":
-        export3DM(first, filepath, fileExt)
+        export3DM(exportList, filepath, fileExt)
 

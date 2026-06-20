@@ -68,6 +68,21 @@ Key importer options (set at top of `import3DM.py`):
 - `merge_brep_faces` — whether to merge Brep faces into a single shell or
   keep them as separate face objects
 
+### Trim reconstruction and degenerate-face fallback
+
+When pythonOCC is available, `_try_trim_reconstruction` rebuilds a trimmed
+`Part::Feature` from a NurbsSurface plus its exported boundary curves
+(`BRepBuilderAPI_MakeFace` + `ShapeFix_Wire`). This reconstruction can produce a
+face without valid pcurves — a zero-area, `isValid()==False` face that renders as
+a collapsed/straight patch, especially for irregularly-trimmed faces (mixed
+arc/line/blend boundaries).
+
+The importer therefore validates the reconstructed face: if it is null, invalid,
+or has near-zero area, it first tries `Shape.fix()`, and if still degenerate it
+falls back to the **untrimmed** surface (which is valid and correctly curved,
+because the exporter segments each surface to the exact face extent). This is
+what keeps round-tripped cylinders curved rather than flat.
+
 ## Companion repos
 
 | Repo | Path | Purpose |
@@ -95,8 +110,14 @@ Exposed in FreeCAD Edit → Preferences → Import-Export → ImportExport 3DM.
 
 | Key | Type | Default | Effect |
 |---|---|---|---|
-| `ExportNativePrimitives` | Bool | True | Write Cylinder/Cone/Sphere/Torus as rhino3dm native primitives instead of converting to NURBS |
-| `ImportCreateGroups` | Bool | True | On import, create `App::DocumentObjectGroup` objects to mirror 3DM named groups |
+| `ExportNativePrimitives` | Bool | **False** | Write Cylinder/Cone/Sphere/Torus as rhino3dm native primitives instead of converting to NURBS. Default off: the bounded-NURBS path reconstructs trim boundaries more reliably on re-import. |
+| `ImportCreateGroups` | Bool | True | On import, create `App::DocumentObjectGroup` objects to mirror 3DM named groups. Set False to place objects directly under the Part with no same-named wrapper groups. |
+| `ImportMakeShell` | Bool | False | After collecting a group's surfaces, attempt `Part.makeShell()` / `makeSolid()`; falls back to individual surfaces. |
+
+**Note:** the code default for `ExportNativePrimitives` is `False`
+(`getExportNativePrimitives()` in `export3DM.py`). `processSurfaceSphere` always
+bypasses the native path regardless of the preference (degenerate pole/seam edge
+on re-import).
 
 ## Export grouping
 
@@ -121,19 +142,65 @@ If `ImportCreateGroups` is False, no container objects are created. Instead, gro
 encoded in the label: surfaces keep their own name; curves get `{groupName}_{curveName}` so the
 association is visible in the model tree without structural grouping.
 
+## Object traversal (`addObjToModel`)
+
+`addObjToModel(obj, visited)` is container-aware and shape-driven (not a fixed
+TypeId whitelist):
+
+- **Containers** (`App::Part`, `App::Link`, `App::LinkGroup`,
+  `App::DocumentObjectGroup`, `Std::Part`) — recurse into children
+  (`.Group`/`.OutList`); export no shape of their own.
+- **`PartDesign::Body`** — export the body's final solid once (`Body.Shape`); do
+  not iterate its individual features (would emit overlapping intermediate
+  solids).
+- **Datum/helper objects** (origins, planes, sketches) — skipped.
+- **Anything else with a non-null `Shape`** — exported via `checkShape`.
+
+A `visited` set guards against double-exporting shared/linked objects. `export()`
+exports the whole selection list, not just `exportList[0]`.
+
+## NURBS fidelity (weight-preserving builders)
+
+rhino3dm control points are **homogeneous**: `Point4d(x, y, z, w)` has Euclidean
+location `(x/w, y/w, z/w)`. To place a pole `P` with weight `w`, write
+`Point4d(P.x*w, P.y*w, P.z*w, w)` **and** create the surface/curve as rational
+(`Create(..., rational=True, ...)`), otherwise weights are ignored.
+
+- `_makeR3Surface(surface)` / `_makeR3Curve(bs)` read `getWeights()`, detect
+  rationality, create the rhino object rational when any weight ≠ 1, and write
+  homogeneous control points. Periodic surfaces/curves are converted to clamped
+  form first (`setUNotPeriodic` / `setVNotPeriodic` / `setNotPeriodic`) so the
+  drop-first/last knot convention matches.
+- `_arcEdgeToR3(edge, crv)` writes circular/arc edges as **exact** degree-2
+  rational arcs (≤90° rational Bézier segments, middle weight `cos(half-angle)`)
+  instead of FreeCAD's high-degree non-rational `toBSpline()` approximation, so
+  boundary curves lie exactly on the rational surface.
+- `_edgeToNurbsCurve3D` preference order: exact rational arc → weight-preserving
+  BSpline → discretised polyline.
+
+Forcing weights to 1.0 (the old behaviour) turned a circle's control polygon into
+a rounded square — the "cylinders with straight edges" symptom.
+
 ## Exporter surface dispatch (`export3DM.py`)
 
-`processSurface()` dispatches on `type(face.Surface)`:
+`processSurface()` dispatches on `type(face.Surface)`. Analytic surfaces default
+to the bounded-NURBS path (`processSurfaceGeneric` → `face.toNurbs()` →
+`processBSplineSurface` → `processSurfaceUV` → `_makeR3Surface`); native
+primitives are used only when `ExportNativePrimitives` is on.
 
 | FreeCAD type | Handler | Notes |
 |---|---|---|
-| `Part.BSplineSurface` | `processBSplineSurface` | Direct NURBS copy |
+| `Part.BSplineSurface` | `processBSplineSurface` | NURBS copy (weights preserved) |
 | `Part.Plane` | `processSurfacePlane` | `toNurbs()` first, bilinear patch fallback |
-| `Part.Cylinder` | `processSurfaceCylinder` | Native `r3.Cylinder` or generic fallback |
-| `Part.Cone` | `processSurfaceCone` | Native `r3.Cone` or generic fallback |
-| `Part.Sphere` | `processSurfaceSphere` | Native `r3.Sphere` or generic fallback |
-| `Part.Toroid` | `processSurfaceToroid` | Native `r3.Torus` or generic fallback |
+| `Part.Cylinder` | `processSurfaceCylinder` | generic (rational NURBS) unless native enabled |
+| `Part.Cone` | `processSurfaceCone` | generic unless native enabled |
+| `Part.Sphere` | `processSurfaceSphere` | always generic (native bypassed) |
+| `Part.Toroid` | `processSurfaceToroid` | generic unless native enabled |
 | anything else | `processSurfaceGeneric` | `face.toNurbs()` then `toBSpline()` |
+
+`processSurfaceUV` no longer has a special ruled-surface branch — it always uses
+the weight-preserving `_makeR3Surface` (the old ruled branch rebuilt cylinder
+rails non-rationally and dropped the circular weights).
 
 ## package.xml notes
 
