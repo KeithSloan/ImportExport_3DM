@@ -237,3 +237,71 @@ Steps:
    time — no extra code change needed for that.
 3. Update `package.xml` `<version>` to match the highest version across all
    three files at the same time.
+
+## trim3dm branch — trimmed-Brep round-trip (EXPERIMENTAL / alpha)
+
+This section applies **only to the `trim3dm` branch**, not Main. Main stays the
+stable untrimmed-NURBS+curves module. None of this should be merged to Main
+until promoted.
+
+### Why it exists
+
+rhino3dm's Python API cannot **construct** trimmed Breps (the ON_Brep
+loop/trim/Curves2D tables aren't bound — see mcneel/rhino3dm issue #712).
+The trim data exists in the 3dm format and in OpenNURBS C++; only the binding is
+missing. So a 3dm exported from FreeCAD via rhino3dm carries untrimmed surfaces +
+loose boundary curves, and the importer must reconstruct trims (fragile).
+
+`trim3dm` closes that gap: a standalone pybind11 + OpenNURBS extension that
+**builds and reads trimmed Breps** in 3dm files. It is decoupled from rhino3dm —
+they cooperate at the **file level** (both speak OpenNURBS), never sharing C++
+objects. Proven end-to-end: FreeCAD trimmed face → trim3dm write → 3dm →
+trim3dm read → pythonOCC rebuild → valid trimmed `Part::Face`.
+
+### Components on this branch
+
+- `trim3dm/` — the extension source (NOT pure Python; must be compiled).
+  - `src/trim3dm.cpp` — `write_trimmed_breps`, `add_trimmed_breps`,
+    `read_trimmed_breps`. Builds `ON_Brep` by hand
+    (`NewFace/NewLoop/NewVertex/NewEdge/NewTrim` + `SetTolerancesBoxesAndFlags`,
+    plus a small positive fallback tolerance where auto-compute leaves UNSET).
+  - `CMakeLists.txt`, `pyproject.toml`, `build.sh`, `README.md`
+    (macOS/Linux/Windows build instructions), `THIRD_PARTY_NOTICES.md`.
+  - OpenNURBS (`mcneel/opennurbs`, zlib-style licence) + pybind11 are git
+    submodules in `extern/` — gitignored, fetched by `build.sh`.
+- `freecad/importExport3DM/import_trim_3DM.py` — second import type,
+  "3DM trimmed via trim3dm (*.3dm)", registered in `__init__.py`. Reads trims via
+  `trim3dm.read_trimmed_breps`, rebuilds trimmed faces with pythonOCC
+  (`BRepBuilderAPI_MakeEdge(pcurve, surface)` → wire → `MakeFace`), and runs
+  `ShapeFix_Face` (fixes `UnorientableShape`, e.g. Plane_0). Gated on
+  `import trim3dm` succeeding; searches `sys.path`, then `../../trim3dm/`.
+
+### Build / environment notes (critical)
+
+- FreeCAD 1.1's bundled Python is **3.11** but ships **no build headers** and a
+  CI-baked libpython path. So build trim3dm against a **conda Python 3.11** (same
+  minor) that has headers; the resulting `cpython-311` `.so` imports into FreeCAD
+  fine (extension modules resolve Python symbols at load).
+  `conda create -n trim311 python=3.11 && PYTHON=$(which python) ./build.sh`.
+- OpenNURBS CMake target is `opennurbsStatic` (not `opennurbs`).
+- `ON_NurbsSurface/Curve` CVs must be set with `ON::homogeneous_rational` and the
+  object created rational, else a 4-wide Point4d overruns a 3-wide CV → SIGBUS.
+- `AddManagedModelGeometryComponent` takes ownership of BOTH geometry and
+  attributes — pass heap-allocated `new ON_3dmObjectAttributes()` (a stack attr
+  dangles → segfault in Write).
+- The sandbox has no network/cmake and is Linux, so trim3dm can only be built on
+  the user's Mac. Build iterations there.
+
+### Status / open items (all on this branch)
+
+- Working: write + read trimmed Breps, round-trip into FreeCAD as trimmed faces.
+- 2D pcurves are currently **sampled degree-1 polylines** (24 segments) — fine
+  for OpenNURBS, approximate for curved trims. **TODO: exact OCCT
+  `CurveOnSurface` pcurves** on export.
+- TODO: wire trim3dm **write** into `export3DM.py` behind an `ExportTrimmedBreps`
+  pref (rhino3dm writes curves/untrimmed surfaces, then
+  `trim3dm.add_trimmed_breps` adds the trimmed faces to the same file).
+- TODO: move the `fc_*` test scripts (`fc_trim3dm_test.py`,
+  `fc_import_trimmed.py`) from the user's project folder into this branch.
+- Plane_0 `valid=False` was an import-side `UnorientableShape`, NOT a bad export
+  (the file is OpenNURBS-valid, all edges/wires clean) — fixed by `ShapeFix_Face`.

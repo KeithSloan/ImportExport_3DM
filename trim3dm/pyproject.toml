@@ -1,0 +1,13 @@
+[build-system]
+requires = ["scikit-build-core>=0.8", "pybind11>=2.11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "trim3dm"
+version = "0.0.1"
+description = "Build/read trimmed Breps in OpenNURBS .3dm files"
+requires-python = ">=3.9"
+
+[tool.scikit-build]
+cmake.version = ">=3.18"
+wheel.expand-macos-universal-tags = true

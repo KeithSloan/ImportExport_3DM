@@ -1,0 +1,6 @@
+extern/
+build/
+*.so
+*.pyd
+__pycache__/
+*.3dm
