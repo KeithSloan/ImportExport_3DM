@@ -51,6 +51,7 @@ Open **Edit → Preferences → Import-Export → ImportExport 3DM**:
 | Option | Default | Effect |
 |---|---|---|
 | Export Cylinder / Cone / Sphere / Torus as native primitives | **Off** | When on, writes analytic surfaces as exact rhino3dm primitives (smaller files). When off (default), they are written as exact bounded rational NURBS, which reconstructs trimmed faces more reliably on re-import. |
+| `ExportTrimmedBreps` *(trim3dm branch)* | **On** | Write faces as **trimmed Breps** via the optional `trim3dm` extension. If trim3dm isn't built, a warning is printed and export falls back to untrimmed surfaces + curves. See *Trimmed Breps* below. |
 | **Import: create groups** | **On** | Mirrors each named `.3dm` group as an `App::DocumentObjectGroup` so an object's faces and boundary curves stay together. |
 | Import: try to make shell/solid | Off | After collecting a group's surfaces, attempt `Part.makeShell()` (and `makeSolid()` if closed); falls back to individual surfaces. |
 
@@ -72,6 +73,55 @@ FreeCAD.ParamGet(
     "User parameter:BaseApp/Preferences/Mod/ImportExport_3DM"
 ).SetBool("ImportCreateGroups", False)
 ```
+
+## Trimmed Breps — `trim3dm` (experimental, `trim3dm` branch)
+
+> Only on the **`trim3dm` branch**. Main writes untrimmed NURBS surfaces +
+> boundary curves; trims are reconstructed on re-import (and can be fragile).
+
+rhino3dm's Python API cannot *construct* trimmed Breps (the OpenNURBS
+loop/trim/2D-curve tables aren't bound — see
+[rhino3dm #712](https://github.com/mcneel/rhino3dm/issues/712)). So a 3dm exported
+through rhino3dm alone carries the full untrimmed surface plus loose boundary
+curves, and Rhino/FreeCAD see untrimmed patches.
+
+The **`trim3dm`** companion extension closes that gap: a small pybind11 +
+OpenNURBS module that *builds and reads* trimmed Breps in `.3dm` files. It is
+separate from rhino3dm — they cooperate at the file level (both speak
+OpenNURBS). With it installed:
+
+- **Export** (`ExportTrimmedBreps`, default on): each face is written as a real
+  **trimmed Brep**. If `trim3dm` isn't built, you get a warning and a normal
+  untrimmed export — nothing breaks.
+- **Import:** the File → Open / Import format dropdown offers two `.3dm` import
+  types: **"3DM Non Trimmed"** (the original importer — untrimmed surfaces +
+  boundary curves) and **"3DM Trimmed via trim3dm"**, which reads the trims and
+  rebuilds proper trimmed `Part::Face` objects (via pythonOCC). Pick "Non
+  Trimmed" for the stable path, "Trimmed via trim3dm" to exercise this feature.
+
+Group/name is preserved: a trimmed Brep is named `"{object}::{face}"`, and the
+trimmed importer rebuilds the matching FreeCAD `Part → group → faces` tree.
+
+**`trim3dm` must be compiled** for your platform and FreeCAD's Python (it is not
+pure Python). Build instructions (macOS / Linux / Windows) are in
+[`trim3dm/README.md`](trim3dm/README.md). Without it, the "3DM Non Trimmed"
+import and untrimmed export continue to work.
+
+> **The trim3dm build has so far only been tested on macOS** (Apple Silicon,
+> FreeCAD 1.1 + conda Python 3.11). The CMake/pybind11 setup is written to be
+> cross-platform, but **Linux and Windows builds are untested** — feedback
+> welcome (see the testing call-out below).
+
+Status: alpha. Curved trims currently use sampled (approximate) pcurves, and the
+trimmed Breps appear *named* (not in real Rhino groups) in Rhino — see the
+"trim3dm branch" section of `CLAUDE.md` for the open items.
+
+### Help test this — before it merges to Main
+
+The `trim3dm` branch is being shared for testing ahead of a merge to Main. If you
+work with FreeCAD ↔ Rhino `.3dm` interchange, please try it and report back — see
+[`trim3dm/TESTING.md`](trim3dm/TESTING.md) for what to test, how to build on your
+platform, and where to leave feedback.
 
 ## Requirements
 
