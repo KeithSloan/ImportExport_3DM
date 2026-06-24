@@ -25,7 +25,7 @@ __author__  = "Keith Sloan <keith@sloan-home.co.uk>"
 __url__     = ["https://github.com/KeithSloan/ImportExport_3DM"]
 __version__ = "0.3.0"
 
-import FreeCAD, os, Part, traceback
+import FreeCAD, os, sys, Part, traceback
 from FreeCAD import Units
 import rhino3dm as r3
 
@@ -64,6 +64,157 @@ def getExportNativePrimitives():
     return _prefs().GetBool("ExportNativePrimitives", False)
 
 
+def getExportTrimmedBreps():
+    """When True (default), faces are written as TRIMMED Breps via the optional
+    `trim3dm` extension — IF it is importable (built for this Python). If trim3dm
+    is not available, a warning is printed and export falls back to untrimmed
+    NurbsSurfaces + boundary curves (the standard behaviour). Set False to always
+    use the untrimmed path. (trim3dm branch only.)"""
+    return _prefs().GetBool("ExportTrimmedBreps", True)
+
+
+# ---------------------------------------------------------------------------
+# trim3dm integration (optional; trim3dm branch).
+# Builds per-face "trim dicts" (surface + ordered loops of 3D edges + 2D
+# pcurves) that trim3dm.add_trimmed_breps() turns into trimmed Breps. The 2D
+# pcurves are sampled degree-1 polylines (v1; TODO: exact OCCT CurveOnSurface).
+# ---------------------------------------------------------------------------
+# Separator used to encode "{group}::{face}" in a trimmed Brep's name so the
+# import side can rebuild the FreeCAD group tree. Must match import_trim_3DM.
+_TRIM_GROUP_SEP = "::"
+
+
+def _import_trim3dm():
+    """Return the trim3dm extension only if importable AND actually built (has
+    its functions). Guards against importing the `trim3dm/` *source* folder as an
+    empty namespace package (which has no functions)."""
+    import glob
+
+    def _good(m):
+        return (m is not None and hasattr(m, "add_trimmed_breps")
+                and hasattr(m, "read_trimmed_breps"))
+
+    try:
+        import trim3dm
+        if _good(trim3dm):
+            return trim3dm
+        sys.modules.pop("trim3dm", None)        # drop the namespace-package stub
+    except ImportError:
+        pass
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    for cand in (os.path.join(here, "..", "..", "trim3dm"), here):
+        cand = os.path.abspath(cand)
+        # only add a directory that actually holds a built trim3dm binary
+        if (glob.glob(os.path.join(cand, "trim3dm*.so"))
+                or glob.glob(os.path.join(cand, "trim3dm*.pyd"))):
+            if cand not in sys.path:
+                sys.path.insert(0, cand)
+    try:
+        sys.modules.pop("trim3dm", None)
+        import trim3dm
+        if _good(trim3dm):
+            return trim3dm
+    except ImportError:
+        pass
+    return None
+
+
+def _trimExpandKnots(knots, mults):
+    seq = []
+    for k, m in zip(knots, mults):
+        seq.extend([k] * int(m))
+    return seq[1:-1]            # OpenNURBS form (drop first & last)
+
+
+def _trimXYZ(p):
+    return (p.x, p.y, p.z) if hasattr(p, "x") else (p[0], p[1], p[2])
+
+
+def _trimSurfaceDict(bs):
+    nu, nv = bs.NbUPoles, bs.NbVPoles
+    poles = bs.getPoles()
+    try:
+        wts = bs.getWeights()
+    except Exception:
+        wts = [[1.0] * nv for _ in range(nu)]
+    cv = []
+    for i in range(nu):
+        row = []
+        for j in range(nv):
+            x, y, z = _trimXYZ(poles[i][j])
+            w = wts[i][j]
+            row.append([x * w, y * w, z * w, w])      # homogeneous
+        cv.append(row)
+    return {"degree_u": bs.UDegree, "degree_v": bs.VDegree, "cv": cv,
+            "knots_u": _trimExpandKnots(bs.getUKnots(), bs.getUMultiplicities()),
+            "knots_v": _trimExpandKnots(bs.getVKnots(), bs.getVMultiplicities())}
+
+
+def _trimEdgeCurves(edge, bs, nsamp=24):
+    """Sample edge in LOOP direction -> matching 3D and 2D (pcurve) degree-1
+    polylines (so they correspond and neighbours share endpoints)."""
+    t0, t1 = edge.FirstParameter, edge.LastParameter
+    ts = [t0 + (t1 - t0) * i / nsamp for i in range(nsamp + 1)]
+    if edge.Orientation == "Reversed":
+        ts.reverse()
+    cv3, cv2 = [], []
+    for t in ts:
+        p = edge.valueAt(t)
+        cv3.append([p.x, p.y, p.z, 1.0])
+        u, v = bs.parameter(p)
+        cv2.append([u, v, 1.0])
+    n = len(ts)
+    knots = [float(k) for k in range(n)]
+    return ({"degree": 1, "cv": cv3, "knots": knots},
+            {"degree": 1, "cv": cv2, "knots": knots})
+
+
+def _trimLoopUVArea(loop):
+    pts = [(uvw[0], uvw[1]) for e in loop for uvw in e["c2"]["cv"]]
+    a = 0.0
+    n = len(pts)
+    for i in range(n):
+        x0, y0 = pts[i]
+        x1, y1 = pts[(i + 1) % n]
+        a += x0 * y1 - x1 * y0
+    return a / 2.0
+
+
+def _trimFaceDict(face, name):
+    """Build a trim3dm face dict (surface + CCW-corrected, snapped loops)."""
+    surf = face.Surface
+    if not isinstance(surf, Part.BSplineSurface):
+        nf = face.toNurbs().Faces[0]
+        face, surf = nf, nf.Surface
+    loops = []
+    for wi, wire in enumerate(face.Wires):
+        edges = wire.OrderedEdges if hasattr(wire, "OrderedEdges") else wire.Edges
+        loop = []
+        for e in edges:
+            if not e.Vertexes:
+                continue
+            c3, c2 = _trimEdgeCurves(e, surf)
+            loop.append({"c3": c3, "c2": c2, "rev3d": False})
+        if not loop:
+            continue
+        # outer loop CCW in UV, inner loops CW
+        area = _trimLoopUVArea(loop)
+        if ((wi == 0) and area < 0) or ((wi != 0) and area > 0):
+            loop.reverse()
+            for e in loop:
+                e["c3"]["cv"].reverse()
+                e["c2"]["cv"].reverse()
+        # snap the trim chain closed
+        m = len(loop)
+        for i in range(m):
+            cur_end = loop[i]["c2"]["cv"][-1]
+            nxt0 = loop[(i + 1) % m]["c2"]["cv"][0]
+            nxt0[0], nxt0[1] = cur_end[0], cur_end[1]
+        loops.append(loop)
+    return {"name": name, "surface": _trimSurfaceDict(surf), "loops": loops}
+
+
 #################################
 # Switch functions
 ################################
@@ -93,6 +244,8 @@ class rhinoModel():
         self.ControlPoints = []
         self._group_idx = -1       # set per-object in addObjToModel; -1 means no group
         self._current_label = ""   # obj.Label of the object currently being exported
+        self._trim_export = False  # when True, processFaces collects trim dicts
+        self._trim_faces = []      # trim3dm face dicts (added after write)
         self.layer = r3.Layer()
         self.layer.Name = "FC Layer"
         self.model.Layers.Add(self.layer)
@@ -899,6 +1052,25 @@ class rhinoModel():
                 )
                 skip += 1
                 continue
+            # Trimmed-Brep path: collect a trim3dm face dict and skip the
+            # untrimmed surface + boundary curves (the trimmed Brep replaces
+            # them). On any failure, fall through to the untrimmed export below.
+            if self._trim_export:
+                try:
+                    # Encode "{group}::{face}" in the Brep name (rhino3dm groups
+                    # can't be set on trim3dm-written Breps). import_trim_3DM
+                    # splits this back into a FreeCAD group, so the imported tree
+                    # matches the untrimmed import: <object> group / <face>.
+                    face_lbl = self._current_label
+                    nm = (f"{base_label}{_TRIM_GROUP_SEP}{face_lbl}"
+                          if base_label and base_label != face_lbl else face_lbl)
+                    self._trim_faces.append(_trimFaceDict(f, nm))
+                    surf_ok += 1
+                    continue
+                except Exception as e:
+                    FreeCAD.Console.PrintMessage(
+                        f"  trim dict failed ({self._current_label}): {e}"
+                        f" — untrimmed fallback for this face\n")
             try:
                 self.processSurface(f)
                 # Boundary curves are NurbyCurve objects — name them by type,
@@ -1070,10 +1242,37 @@ def export3DM(exportList, filepath, fileExt):
         exportList = [exportList]
     labels = ", ".join(getattr(o, "Label", "?") for o in exportList)
     FreeCAD.Console.PrintMessage(f"Export 3DM {__version__}: {labels}\n")
+
+    # Trimmed-Brep export via the optional trim3dm extension. If the preference
+    # is on but trim3dm isn't built, warn and fall back to untrimmed export.
+    trim3dm = None
+    if getExportTrimmedBreps():
+        trim3dm = _import_trim3dm()
+        if trim3dm is None:
+            FreeCAD.Console.PrintWarning(
+                "ImportExport_3DM: ExportTrimmedBreps is enabled but the "
+                "'trim3dm' extension is not available (not built for this "
+                "Python). Exporting UNTRIMMED surfaces + boundary curves. "
+                "Build trim3dm (see trim3dm/README.md) for trimmed export.\n")
+        else:
+            rModel._trim_export = True
+
     visited = set()
     for obj in exportList:
         rModel.addObjToModel(obj, visited)
     rModel.write(filepath)
+
+    # Add the collected trimmed Breps to the file rhino3dm just wrote.
+    if trim3dm is not None and rModel._trim_faces:
+        try:
+            ok = trim3dm.add_trimmed_breps(filepath, filepath, rModel._trim_faces)
+            FreeCAD.Console.PrintMessage(
+                f"  trim3dm: added {len(rModel._trim_faces)} trimmed Brep(s)"
+                f" ({'ok' if ok else 'write failed'})\n")
+        except Exception as e:
+            FreeCAD.Console.PrintError(
+                f"  trim3dm.add_trimmed_breps failed: {e}\n")
+
     FreeCAD.Console.PrintMessage(f"Written: {filepath}\n")
 def length(lenQuantity):
     return Units.Quantity(lenQuantity).Value

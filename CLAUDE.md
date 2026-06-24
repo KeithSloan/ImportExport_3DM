@@ -294,14 +294,32 @@ trim3dm read → pythonOCC rebuild → valid trimmed `Part::Face`.
 
 ### Status / open items (all on this branch)
 
-- Working: write + read trimmed Breps, round-trip into FreeCAD as trimmed faces.
-- 2D pcurves are currently **sampled degree-1 polylines** (24 segments) — fine
-  for OpenNURBS, approximate for curved trims. **TODO: exact OCCT
-  `CurveOnSurface` pcurves** on export.
-- TODO: wire trim3dm **write** into `export3DM.py` behind an `ExportTrimmedBreps`
-  pref (rhino3dm writes curves/untrimmed surfaces, then
-  `trim3dm.add_trimmed_breps` adds the trimmed faces to the same file).
-- TODO: move the `fc_*` test scripts (`fc_trim3dm_test.py`,
-  `fc_import_trimmed.py`) from the user's project folder into this branch.
+DONE:
+- Write + read trimmed Breps; round-trip into FreeCAD as trimmed faces.
+- `export3DM.py` writes trimmed Breps via trim3dm, gated by the
+  `ExportTrimmedBreps` pref (default True) AND `_import_trim3dm()` succeeding.
+  If the pref is on but trim3dm isn't built → `PrintWarning` + fall back to the
+  untrimmed surfaces+curves path (per-face fallback too). `processFaces` collects
+  `_trimFaceDict`s and skips the untrimmed export for those faces; after
+  `rModel.write`, `trim3dm.add_trimmed_breps(filepath, filepath, faces)` adds them.
+- Group/name: trimmed Breps can't carry rhino3dm groups, so the parent group is
+  encoded in the Brep **name** as `"{group}::{face}"` (`_TRIM_GROUP_SEP`).
+  `import_trim_3DM` splits it and rebuilds `Part → group → faces` (respects
+  `ImportCreateGroups`), matching the untrimmed import tree.
 - Plane_0 `valid=False` was an import-side `UnorientableShape`, NOT a bad export
-  (the file is OpenNURBS-valid, all edges/wires clean) — fixed by `ShapeFix_Face`.
+  (OpenNURBS-valid, all edges/wires clean) — fixed by `ShapeFix_Face`.
+
+TODO:
+- **Exact OCCT `CurveOnSurface` pcurves** on export — currently the 2D pcurves
+  are **sampled degree-1 polylines** (24 segments): fine for OpenNURBS,
+  approximate for curved trims. This is the main precision upgrade.
+- **Real Rhino groups** for trimmed Breps. The `"group::face"` name-encoding
+  gives the correct tree in FreeCAD, but in Rhino the Breps appear *named*
+  `Corps::Plane_0`, not in real groups. Proper groups need trim3dm to write
+  OpenNURBS group-table entries (`ON_Group` + `ON_3dmObjectAttributes::AddToGroup`)
+  — a C++ change + rebuild. (API not yet verified; opennurbs headers were locked
+  in the sandbox when attempted.)
+- Move the `fc_*` test scripts (`fc_trim3dm_test.py`, `fc_import_trimmed.py`,
+  `fc_plane0_check.py`) from the user's project folder into this branch.
+- Version bump: when this is tested+committed, bump `export3DM.py` to 0.4.0
+  (new ExportTrimmedBreps feature) and `import_trim_3DM.py` stays 0.1.x.

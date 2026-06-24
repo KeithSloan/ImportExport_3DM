@@ -20,19 +20,38 @@ FreeCAD.Console.PrintMessage(f"import_trim_3DM {__version__}\n")
 
 # --- locate the trim3dm extension -----------------------------------------
 def _import_trim3dm():
+    """Return the trim3dm extension only if importable AND built (has its
+    functions), else None. Avoids importing the source folder as an empty
+    namespace package."""
+    import glob
+
+    def _good(m):
+        return (m is not None and hasattr(m, "read_trimmed_breps")
+                and hasattr(m, "add_trimmed_breps"))
+
     try:
         import trim3dm
-        return trim3dm
+        if _good(trim3dm):
+            return trim3dm
+        sys.modules.pop("trim3dm", None)
     except ImportError:
         pass
+
     here = os.path.dirname(os.path.abspath(__file__))
-    # repo_root/trim3dm (build.sh drops the .so there), and the module dir
     for cand in (os.path.join(here, "..", "..", "trim3dm"), here):
         cand = os.path.abspath(cand)
-        if cand not in sys.path and os.path.isdir(cand):
-            sys.path.insert(0, cand)
-    import trim3dm
-    return trim3dm
+        if (glob.glob(os.path.join(cand, "trim3dm*.so"))
+                or glob.glob(os.path.join(cand, "trim3dm*.pyd"))):
+            if cand not in sys.path:
+                sys.path.insert(0, cand)
+    try:
+        sys.modules.pop("trim3dm", None)
+        import trim3dm
+        if _good(trim3dm):
+            return trim3dm
+    except ImportError:
+        pass
+    return None
 
 
 # --- pythonOCC builders ----------------------------------------------------
@@ -154,31 +173,74 @@ def _trimmed_face_shape(fd):
     return shp
 
 
+# Must match export3DM._TRIM_GROUP_SEP — names are encoded "{group}::{face}".
+_TRIM_GROUP_SEP = "::"
+
+
 def _read_into(doc, filename):
     trim3dm = _import_trim3dm()
+    if trim3dm is None:
+        FreeCAD.Console.PrintError(
+            "import_trim_3DM: the 'trim3dm' extension is not built/importable. "
+            "Build it (see trim3dm/README.md) and put the compiled "
+            "trim3dm*.so/.pyd where FreeCAD can import it (e.g. the repo's "
+            "trim3dm/ folder), then re-import.\n")
+        return
     faces = trim3dm.read_trimmed_breps(filename)
     FreeCAD.Console.PrintMessage(
         f"import_trim_3DM: {len(faces)} trimmed Brep(s) in {filename}\n")
+
+    prefs = FreeCAD.ParamGet(
+        "User parameter:BaseApp/Preferences/Mod/ImportExport_3DM")
+    create_groups = prefs.GetBool("ImportCreateGroups", True)
+
+    # Mirror import3DM's tree: a top App::Part, with one
+    # App::DocumentObjectGroup per encoded group; ungrouped faces sit in Part.
+    part = doc.addObject("App::Part", "Part") if create_groups else None
+    groups = {}
+
+    def _container(gname):
+        if not create_groups:
+            return None
+        if gname is None:
+            return part
+        g = groups.get(gname)
+        if g is None:
+            g = doc.addObject("App::DocumentObjectGroup", gname)
+            g.Label = gname
+            if part is not None:
+                part.addObject(g)
+            groups[gname] = g
+        return g
+
     ok = invalid = fail = 0
     for fd in faces:
-        name = fd.get("name") or "TrimFace"
+        raw = fd.get("name") or "TrimFace"
+        if _TRIM_GROUP_SEP in raw:
+            gname, fname = raw.rsplit(_TRIM_GROUP_SEP, 1)
+        else:
+            gname, fname = None, raw
         try:
             shp = _trimmed_face_shape(fd)
             if shp is None or shp.isNull():
                 fail += 1
-                FreeCAD.Console.PrintMessage(f"  {name}: no shape\n")
+                FreeCAD.Console.PrintMessage(f"  {fname}: no shape\n")
                 continue
-            obj = doc.addObject("Part::Feature", name)
+            obj = doc.addObject("Part::Feature", fname)
             obj.Shape = shp
-            obj.Label = name
+            obj.Label = fname
+            cont = _container(gname)
+            if cont is not None:
+                cont.addObject(obj)
             if not shp.isValid():
                 invalid += 1
+            ok += 1
         except Exception as e:
             fail += 1
-            FreeCAD.Console.PrintMessage(f"  {name}: {e}\n")
+            FreeCAD.Console.PrintMessage(f"  {fname}: {e}\n")
     doc.recompute()
     FreeCAD.Console.PrintMessage(
-        f"import_trim_3DM: imported {len(faces) - fail} face(s)"
+        f"import_trim_3DM: imported {ok} face(s)"
         f" ({invalid} invalid, {fail} failed)\n")
 
 
