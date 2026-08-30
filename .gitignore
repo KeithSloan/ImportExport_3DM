@@ -2,3 +2,9 @@
 
 # FreeCAD backup files
 *.FCBak
+
+# temporary sample-scan folder (openNURBS example files, not for commit)
+sample_scan/
+
+# session scratch / large sample scans
+_to_delete/

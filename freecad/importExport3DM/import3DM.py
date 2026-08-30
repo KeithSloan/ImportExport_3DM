@@ -23,7 +23,7 @@
 # *                                                                        *
 # **************************************************************************
 
-__version__ = "0.1.13"
+__version__ = "0.3.1"
 
 import FreeCAD
 import os, io, sys
@@ -57,8 +57,29 @@ try:
 except ImportError:
     pass
 
+# ── Official rhino3dm trim-topology read API (issue #712) ──────────────────────
+# rhino3dm >= ~8.32 exposes Brep trim topology to Python: BrepFace.Loops/OuterLoop,
+# BrepLoop.LoopType/Trims, BrepTrim.EdgeIndex/IsReversed.  When present (together
+# with pythonOCC) we import real Rhino trimmed Breps by reading their loop/trim
+# topology directly, instead of the export-driven surface+boundary-curve pairing
+# reconstruction used for FreeCAD-authored files and older rhino3dm.
+try:
+    _HAS_TRIM_API = hasattr(r3.BrepFace, "OuterLoop") and hasattr(r3.BrepFace, "Loops")
+except Exception:
+    _HAS_TRIM_API = False
+
+# numpy is used to fit analytic primitives (cylinder/cone/sphere/plane) from the
+# Brep face geometry when ImportNativePrimitives is on.  If it is unavailable the
+# importer simply uses NURBS surfaces for every face.
+try:
+    import numpy as _np
+    _HAVE_NUMPY = True
+except Exception:
+    _HAVE_NUMPY = False
+
 FreeCAD.Console.PrintMessage(
-    f"import3DM {__version__}: pythonOCC={_PYTHONOCC}  Part.Face={_FREECAD_MAKE_FACE}\n"
+    f"import3DM {__version__}: pythonOCC={_PYTHONOCC}  Part.Face={_FREECAD_MAKE_FACE}"
+    f"  BrepTrimAPI={_HAS_TRIM_API}  (rhino3dm {getattr(r3, '__version__', '?')})\n"
 )
 
 # ── pythonOCC helpers ─────────────────────────────────────────────────────────
@@ -572,7 +593,421 @@ class File3dm:
             self._trim_fail = f"{type(e).__name__}: {str(e)[:80]}"
             return None
 
+    # ══════════════════════════════════════════════════════════════════════════
+    #  Official Brep-topology import  (rhino3dm >= 8.32 read API + pythonOCC)
+    # ══════════════════════════════════════════════════════════════════════════
+
     def parse_objects(self, doc=None):
+        """Dispatch importer.  Use the official Brep trim-topology reader for
+        files that contain real (Rhino-authored) trimmed Breps whenever the
+        rhino3dm read API is present; otherwise fall back to the legacy pairing
+        reconstruction (FreeCAD-exported files, older rhino3dm).
+
+        The official path is built entirely on FreeCAD's own ``Part``/OCCT API,
+        so it needs **no pythonOCC (OCC.Core)** — only rhino3dm >= 8.32."""
+        if not doc:
+            doc = FreeCAD.newDocument("3dm import")
+        has_trimmed_brep = False
+        try:
+            for o in self.f3dm.Objects:
+                g = o.Geometry
+                if isinstance(g, r3.Brep) and (len(g.Faces) > 1 or not g.IsSurface):
+                    has_trimmed_brep = True
+                    break
+        except Exception:
+            has_trimmed_brep = False
+        if _HAS_TRIM_API and has_trimmed_brep:
+            FreeCAD.Console.PrintMessage(
+                "  import path: OFFICIAL Brep trim topology (native Part)\n")
+            return self.parse_rhino_breps(doc)
+        FreeCAD.Console.PrintMessage(
+            f"  import path: legacy (TrimAPI={_HAS_TRIM_API} "
+            f"pythonOCC={_PYTHONOCC} trimmedBrep={has_trimmed_brep})\n")
+        return self.parse_objects_legacy(doc)
+
+    # ---- native (FreeCAD Part) face construction from Brep loop/trim topology --
+    #
+    # These reuse self.create_nurbs_surface() / self.create_curve() (Part.BSpline*)
+    # and build trimmed faces with Part.Face(surface, wire) — no OCC.Core needed.
+
+    def _bspline_edge(self, nc):
+        """Part.Edge from a rhino3dm NurbsCurve (clamped boundary edge)."""
+        pts = []
+        weights = []
+        for i in range(len(nc.Points)):
+            p = nc.Points[i]
+            pts.append(FreeCAD.Vector(p.X / p.W, p.Y / p.W, p.Z / p.W))
+            weights.append(p.W)
+        knots, mults = self.getFCKnots(nc.Knots)
+        bs = Part.BSplineCurve()
+        bs.buildFromPolesMultsKnots(pts, mults, knots, False, nc.Degree, weights)
+        return bs.toShape()
+
+    def _loop_wire(self, brep, loop):
+        """Return (Part.Wire, [Part.Edge]) for a BrepLoop, skipping singular
+        trims (EdgeIndex < 0, e.g. cone apex / sphere pole)."""
+        edges = []
+        try:
+            trims = loop.Trims
+        except Exception:
+            return None, None
+        for t in trims:
+            ei = getattr(t, "EdgeIndex", -1)
+            if ei is None or ei < 0:
+                continue
+            try:
+                edges.append(self._bspline_edge(brep.Edges[ei].ToNurbsCurve()))
+            except Exception:
+                pass
+        if not edges:
+            return None, None
+        try:
+            return Part.Wire(Part.__sortEdges__(edges)), edges
+        except Exception:
+            try:
+                return Part.Wire(edges), edges
+            except Exception:
+                return None, edges
+
+    # ---- analytic primitive fitting (ImportNativePrimitives) -----------------
+    # rhino3dm exposes only the Is<Type>() flag on a Brep face, not the analytic
+    # parameters, so we fit them from the underlying surface (sampled via PointAt
+    # / NormalAt) and build a native OCCT Plane/Cylinder/Cone/Sphere.  Each fit is
+    # validated by max deviation of the samples; over tolerance -> NURBS instead.
+
+    _FIT_TOL = 0.05   # max sample deviation (model units) to accept an analytic fit
+
+    @staticmethod
+    def _sample_surface(us, nu=13, nv=5):
+        du = us.Domain(0)
+        dv = us.Domain(1)
+        P = []
+        for iu in range(nu):
+            for iv in range(nv):
+                u = du.T0 + (du.T1 - du.T0) * iu / (nu - 1)
+                v = dv.T0 + (dv.T1 - dv.T0) * iv / (nv - 1)
+                p = us.PointAt(u, v)
+                P.append([p.X, p.Y, p.Z])
+        return _np.array(P), du, dv
+
+    @staticmethod
+    def _fit_ring(us, vp, du, nu=24):
+        r = []
+        for iu in range(nu):
+            u = du.T0 + (du.T1 - du.T0) * iu / (nu - 1)
+            p = us.PointAt(u, vp)
+            r.append([p.X, p.Y, p.Z])
+        r = _np.array(r)
+        c = r.mean(0)
+        return c, float(_np.mean(_np.linalg.norm(r - c, axis=1)))
+
+    def _fit_analytic_surface(self, face):
+        """Return (Part surface, kind_str) fitted from *face*, or (None, None)."""
+        if not (_HAVE_NUMPY and getattr(self, "_native_primitives", True)):
+            return None, None
+        try:
+            us = face.UnderlyingSurface()
+            P, du, dv = self._sample_surface(us)
+            if face.IsPlanar():
+                c = P.mean(0)
+                _, _, Vt = _np.linalg.svd(P - c)
+                n = Vt[2]
+                if float(_np.max(_np.abs((P - c) @ n))) < self._FIT_TOL:
+                    return Part.Plane(FreeCAD.Vector(*c), FreeCAD.Vector(*n)), "Plane"
+            elif face.IsCylinder() and len(face.Loops) <= 1:
+                # NOTE: Part.Cylinder is an *infinite* surface; trimming it with an
+                # inner-loop hole (e.g. a branch cut in a T-joint) can crash OCCT
+                # uncatchably.  Only fit analytic cylinders for hole-free faces;
+                # holed cylinder walls fall through to the domain-bounded NURBS path.
+                N = []
+                for iu in range(9):
+                    for iv in range(3):
+                        u = du.T0 + (du.T1 - du.T0) * iu / 8.0
+                        v = dv.T0 + (dv.T1 - dv.T0) * iv / 2.0
+                        nn = us.NormalAt(u, v)
+                        N.append([nn.X, nn.Y, nn.Z])
+                N = _np.array(N)
+                _, S, Vt = _np.linalg.svd(N - N.mean(0))
+                axis = Vt[int(_np.argmin(S))]
+                axis = axis / _np.linalg.norm(axis)
+                c0 = P.mean(0)
+                e1 = _np.cross(axis, [1, 0, 0])
+                if _np.linalg.norm(e1) < 1e-6:
+                    e1 = _np.cross(axis, [0, 1, 0])
+                e1 = e1 / _np.linalg.norm(e1)
+                e2 = _np.cross(axis, e1)
+                pr = _np.array([[(P[i] - c0) @ e1, (P[i] - c0) @ e2] for i in range(len(P))])
+                A = _np.column_stack([pr[:, 0], pr[:, 1], _np.ones(len(pr))])
+                s, *_ = _np.linalg.lstsq(A, -(pr[:, 0] ** 2 + pr[:, 1] ** 2), rcond=None)
+                cx, cy = -s[0] / 2, -s[1] / 2
+                R = _np.sqrt(max(cx * cx + cy * cy - s[2], 0.0))
+                cen = c0 + cx * e1 + cy * e2
+                dev = max(abs(_np.linalg.norm((P[i] - cen) - ((P[i] - cen) @ axis) * axis) - R)
+                          for i in range(len(P)))
+                if dev < self._FIT_TOL and R > 1e-6:
+                    c = Part.Cylinder()
+                    c.Radius = float(R)
+                    c.Center = FreeCAD.Vector(*cen)
+                    c.Axis = FreeCAD.Vector(*axis)
+                    return c, "Cylinder"
+            elif face.IsCone() and len(face.Loops) <= 1:
+                # same infinite-surface caution as the cylinder case above
+                c0, r0 = self._fit_ring(us, dv.T0 + 0.05 * (dv.T1 - dv.T0), du)
+                c1, r1 = self._fit_ring(us, dv.T1 - 0.05 * (dv.T1 - dv.T0), du)
+                axis = c1 - c0
+                d = _np.linalg.norm(axis)
+                if d > 1e-9:
+                    axis = axis / d
+                    ha = float(_np.arctan2(abs(r1 - r0), d))
+                    cone = Part.Cone()
+                    cone.Center = FreeCAD.Vector(*c0)
+                    cone.Radius = float(r0)
+                    cone.SemiAngle = ha
+                    cone.Axis = FreeCAD.Vector(*axis)
+                    return cone, "Cone"
+            elif face.IsSphere():
+                A = _np.column_stack([2 * P[:, 0], 2 * P[:, 1], 2 * P[:, 2], _np.ones(len(P))])
+                s, *_ = _np.linalg.lstsq(A, (P ** 2).sum(1), rcond=None)
+                cen = s[:3]
+                R = float(_np.sqrt(max(s[3] + cen @ cen, 0.0)))
+                dev = max(abs(_np.linalg.norm(P[i] - cen) - R) for i in range(len(P)))
+                if dev < self._FIT_TOL and R > 1e-6:
+                    sp = Part.Sphere()
+                    sp.Radius = R
+                    sp.Center = FreeCAD.Vector(*cen)
+                    return sp, "Sphere"
+        except Exception:
+            pass
+        return None, None
+
+    def _face_from_brepface(self, brep, face):
+        """Reconstruct a trimmed Part.Face from a rhino3dm BrepFace using the
+        native Part API.  Preference order per face:
+          0. native analytic surface (Plane/Cylinder/Cone/Sphere) when
+             ImportNativePrimitives is on and the fit is within tolerance
+          1. Part.Face on the NURBS surface (outer[, holes])
+          2. Part.makeFilledFace(boundary) for free-form faces whose 3-D wire
+             will not project onto the surface
+          3. the untrimmed surface (surf.toShape()) — keeps the face
+        Returns (Part.Face, how) or (None, 'fail')."""
+        outer = None
+        outer_edges = None
+        inners = []
+        try:
+            loops = face.Loops
+        except Exception:
+            loops = []
+        for lp in loops:
+            w, ed = self._loop_wire(brep, lp)
+            if w is None:
+                continue
+            if str(getattr(lp, "LoopType", "")).endswith("Outer") and outer is None:
+                outer = w
+                outer_edges = ed
+            else:
+                inners.append(w)
+        if outer is None:
+            return None, "no-outer"
+
+        def _mk(surf):
+            try:
+                f = Part.Face(surf, [outer] + inners) if inners else Part.Face(surf, outer)
+                try:
+                    f.fix(1e-3, 1e-3, 1e-3)
+                except Exception:
+                    pass
+                if f.Area > 1e-9:
+                    return f
+            except Exception:
+                pass
+            return None
+
+        # tier 0 — native analytic primitive.  Part.Face on a full analytic
+        # surface (sphere/cylinder) can trim to the COMPLEMENT — the large rest of
+        # the surface rather than the small patch — in which case the face is far
+        # bigger than its outer boundary wire.  Reject that and fall back to NURBS
+        # (whose domain-limited patch trims to the intended region).
+        asurf, kind = self._fit_analytic_surface(face)
+        if asurf is not None:
+            f = _mk(asurf)
+            if f is not None:
+                wd = outer.BoundBox.DiagonalLength
+                if wd < 1e-9 or f.BoundBox.DiagonalLength <= 2.0 * wd:
+                    return f, kind
+        # tier 1 — NURBS surface
+        try:
+            nsurf = self.create_nurbs_surface(face.UnderlyingSurface().ToNurbsSurface())
+        except Exception:
+            nsurf = None
+        if nsurf is not None:
+            f = _mk(nsurf)
+            if f is not None:
+                return f, "NURBS"
+        # tier 2 — filled face from the 3-D boundary
+        if outer_edges:
+            try:
+                f = Part.makeFilledFace(outer_edges)
+                if f is not None and f.Area > 1e-9:
+                    if inners:
+                        try:
+                            fh = f.cutHoles(inners)
+                            fh.fix(1e-3, 1e-3, 1e-3)
+                            if fh.Area > 1e-9:
+                                f = fh
+                        except Exception:
+                            pass
+                    return f, "filled"
+            except Exception:
+                pass
+        # tier 3 — untrimmed surface
+        if nsurf is not None:
+            try:
+                f = nsurf.toShape()
+                if f.Area > 1e-9:
+                    return f, "untrimmed"
+            except Exception:
+                pass
+        return None, "fail"
+
+    def _import_brep_official(self, doc, brep, label):
+        """Reconstruct a full Rhino Brep as a trimmed Part::Feature — a solid if
+        the shell closes, otherwise a shell/compound of correctly-trimmed faces.
+        Returns (obj, (n_ok, n_fail, how)) or (None, stats)."""
+        faces = []
+        n_ok = n_fail = 0
+        how = {}
+        for i in range(len(brep.Faces)):
+            f = None
+            h = "fail"
+            try:
+                f, h = self._face_from_brepface(brep, brep.Faces[i])
+            except Exception:
+                f = None
+            how[h] = how.get(h, 0) + 1
+            if f is not None:
+                faces.append(f)
+                n_ok += 1
+            else:
+                n_fail += 1
+        if not faces:
+            return None, (n_ok, n_fail, "no faces")
+        # sew natively — solid if the shell closes, else shell, else compound
+        shape = None
+        kind = "?"
+        try:
+            shell = Part.Shell(faces)
+            # Only attempt a Solid on a genuinely closed shell.  Part.Solid()
+            # on an open shell (a single trimmed face, or a shell containing a
+            # holed face) can raise an OCCT Standard_Failure that is *not*
+            # surfaced as a catchable Python exception -- it aborts / segfaults
+            # FreeCAD instead of being caught below.  Guarding on isClosed()
+            # means an open shell never reaches Part.Solid.
+            # (Ref: v1_T-Joint2.3dm hard crash on the first freeform holed face.)
+            if shell.isClosed():
+                try:
+                    solid = Part.Solid(shell)
+                    if solid.Volume < 0:
+                        solid.reverse()
+                    shape = solid
+                    kind = "Solid"
+                except Exception:
+                    shape = shell
+                    kind = "Shell"
+            else:
+                shape = shell
+                kind = "Shell(open)"
+        except Exception:
+            comp = Part.Compound(faces)
+            try:
+                comp = comp.removeSplitter()
+            except Exception:
+                pass
+            shape = comp
+            kind = "Compound"
+        obj = doc.addObject("Part::Feature", "Brep")
+        obj.Shape = shape
+        obj.Label = label
+        detail = kind + " [" + " ".join(f"{k}:{v}" for k, v in sorted(how.items())) + "]"
+        return obj, (n_ok, n_fail, detail)
+
+    def parse_rhino_breps(self, doc=None):
+        """Import a Rhino-authored .3dm: Breps via official trim-topology
+        reconstruction, other geometry via import_geometry.  Mirrors 3DM groups
+        as FreeCAD groups when ImportCreateGroups is set."""
+        if not doc:
+            doc = FreeCAD.newDocument("3dm import")
+        prefs = FreeCAD.ParamGet(
+            "User parameter:BaseApp/Preferences/Mod/ImportExport_3DM")
+        create_groups = prefs.GetBool("ImportCreateGroups", True)
+        # ImportNativePrimitives: fit analytic Plane/Cylinder/Cone/Sphere surfaces
+        # (needs numpy); default on, falls back to NURBS per face when the fit is
+        # out of tolerance or numpy is unavailable.
+        self._native_primitives = prefs.GetBool("ImportNativePrimitives", True) and _HAVE_NUMPY
+        FreeCAD.Console.PrintMessage(
+            f"  ImportNativePrimitives={self._native_primitives}\n")
+
+        grp_names = {}
+        for gi in range(len(self.f3dm.Groups)):
+            g = self.f3dm.Groups[gi]
+            grp_names[gi] = g.Name if g.Name else f"Group_{gi}"
+        fc_groups = {}
+        part = doc.addObject("App::Part", "Part")
+
+        def container_for(attrs):
+            if not create_groups or attrs.GroupCount == 0:
+                return part
+            gi = attrs.GetGroupList()[0]
+            if gi not in fc_groups:
+                grp = doc.addObject("App::DocumentObjectGroup",
+                                    grp_names.get(gi, f"Group_{gi}"))
+                grp.Label = grp_names.get(gi, f"Group_{gi}")
+                part.addObject(grp)
+                fc_groups[gi] = grp
+            return fc_groups[gi]
+
+        n_brep = n_other = 0
+        for i in range(len(self.f3dm.Objects)):
+            r3_obj = self.f3dm.Objects[i]
+            geo = r3_obj.Geometry
+            attrs = r3_obj.Attributes
+            name = attrs.Name
+            cont = container_for(attrs)
+            if isinstance(geo, r3.Brep) and (len(geo.Faces) > 1 or not geo.IsSurface):
+                label = name if name else "Brep"
+                obj, stats = self._import_brep_official(doc, geo, label)
+                n_ok, n_fail, kind = stats
+                if obj is None:
+                    FreeCAD.Console.PrintMessage(
+                        f"  {label}: Brep reconstruction failed "
+                        f"({n_ok} ok / {n_fail} fail) — importing raw geometry\n")
+                    fb = self.import_geometry(doc, geo)
+                    if fb:
+                        fb.Label = label
+                        cont.addObject(fb)
+                    continue
+                FreeCAD.Console.PrintMessage(
+                    f"  {label}: {kind} from {n_ok}/{n_ok + n_fail} trimmed faces"
+                    + (f" ({n_fail} face fallback)" if n_fail else "") + "\n")
+                cont.addObject(obj)
+                n_brep += 1
+            else:
+                obj = self.import_geometry(doc, geo)
+                if not obj:
+                    continue
+                if name:
+                    obj.Label = name
+                cont.addObject(obj)
+                n_other += 1
+        doc.recompute()
+        try:
+            FreeCADGui.SendMsgToActiveView("ViewFit")
+        except Exception:
+            pass
+        FreeCAD.Console.PrintMessage(
+            f"  Imported {n_brep} Brep(s) + {n_other} other object(s) "
+            f"via official trim topology\n")
+
+    def parse_objects_legacy(self, doc=None):
         if not doc:
             doc = FreeCAD.newDocument("3dm import")
 
