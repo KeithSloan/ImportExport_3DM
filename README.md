@@ -25,8 +25,8 @@ path automatically.
 | Extrusion (cylinder/box/pipe) | Native `Part::Cylinder` etc. (analytic parameters read directly) |
 | NurbsSurface | `Part::Feature` with BSplineSurface |
 | NurbsCurve | `Part::Feature` with BSplineCurve wire |
-| SubD | Diagnostic only — rhino3dm exposes SubD topology but no `ToBrep`/`ToNurbs` in Python, so it can't yet be imported as NURBS |
-| Mesh | Diagnostic only — NURBS not preserved by originating app |
+| SubD | `App::Part` with a **NURBS-limit** child (exact bicubic B-spline patches for the regular quad regions) + a **control-net cage** child drawn as quads via a pivy `SoIndexedFaceSet` (see below) |
+| Mesh | FreeCAD `Mesh::Feature` (NURBS not preserved by the originating app) |
 
 **Native analytic primitives.** With *Import: native primitives* on (default),
 Brep faces flagged by Rhino as planar / cylindrical / conical / spherical are
@@ -207,13 +207,24 @@ Additional Rhino sample files: <https://www.rhino3d.com/download/opennurbs/6/ope
 
 ## Notes on SubD, other formats, and analysis
 
-- **SubD.** A subdivision surface is a coarse control cage plus subdivision rules
-  whose smooth *limit* is (away from extraordinary vertices) a set of bicubic
-  B-spline patches — so it sits between mesh and NURBS and converts to either,
-  but is *not* stored as both. rhino3dm exposes SubD topology and `Subdivide()`
-  but no `ToBrep`/`ToNurbs` in the Python bindings (RhinoCommon has `SubD.ToBrep`,
-  so this is an unwrapped-binding gap), which is why SubD is not yet imported as
-  NURBS. A control-cage-as-mesh import is the practical near-term option.
+- **SubD (dual NURBS + mesh).** A subdivision surface is a coarse control cage
+  whose smooth *limit* is, away from extraordinary vertices, a set of bicubic
+  B-spline patches — so it sits between mesh and NURBS. rhino3dm's Python bindings
+  expose the SubD topology and `Subdivide()` but no `ToBrep`/`ToNurbs`, so we
+  reconstruct the limit ourselves. Each **regular** interior quad face (valence-4
+  smooth corners) has a Catmull–Clark limit that is *exactly* the uniform bicubic
+  B-spline patch of its 4×4 control-net one-ring, so it is emitted as an exact
+  `Part` B-spline face; the poles are `B = M·P·Mᵀ` with the standard uniform-
+  B-spline→Bézier matrix `M` (verified against rhino3dm's own `SurfacePoint` to
+  ~1e-15). **Extraordinary** regions — n-gon faces, valence≠4 vertices, boundaries
+  and creases — have no single clean patch and stay in the **control-net cage**,
+  kept as point + face-index arrays and drawn directly as quads by a lightweight
+  pivy `SoIndexedFaceSet` view provider (two bulk `setValues` crossings — ~5 ms for
+  40 000 quads, no compiled dependency, and no triangle `Mesh`, whose kernel is
+  triangle-only and would split every quad). The import is an `App::Part` holding a
+  NURBS child (native `Part` display, downstream-operable) and the cage child:
+  NURBS where the maths is exact, quad cage where it is not. Exact-NURBS coverage
+  of the irregular patches (via Stam evaluation) is the natural next step.
 - **NURBS and FEM.** FreeCAD's FEM workbench is mesh-based, which discretizes
   away the exact NURBS geometry. The meshless alternative for NURBS is
   **isogeometric analysis (IGA)** — using the NURBS basis directly (open-source:
@@ -222,6 +233,14 @@ Additional Rhino sample files: <https://www.rhino3d.com/download/opennurbs/6/ope
   realistic path rather than native support.
 
 ## Changes
+
+### Unreleased — SubD import (NURBS limit patches + control-net cage)
+
+- **SubD surfaces now import** as an `App::Part` holding a **NURBS** child — exact
+  bicubic B-spline limit patches for the regular quad regions — and a **control-net
+  cage** child drawn as quads by a pivy `SoIndexedFaceSet` view provider (no
+  triangle `Mesh`; quads preserved). Previously a SubD produced only a diagnostic
+  message. New module `importSubD.py`. (On the `SubD` branch.)
 
 ### Import 0.3.1 — trimmed-face import crash fix
 

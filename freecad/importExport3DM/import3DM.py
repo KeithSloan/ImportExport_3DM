@@ -1420,10 +1420,19 @@ class File3dm:
             return
 
         if isinstance(geo, r3.SubD):
-            FreeCAD.Console.PrintMessage(
-                f"  SubD: IsSolid={geo.IsSolid} \u2014 NURBS not preserved\n"
-            )
-            return
+            try:
+                import os, sys
+                _d = os.path.dirname(os.path.abspath(__file__))
+                if _d not in sys.path:
+                    sys.path.append(_d)
+                import importSubD
+                return importSubD.makeSubD(doc, geo, "SubD")
+            except Exception as e:
+                import traceback
+                FreeCAD.Console.PrintError(
+                    "  SubD import failed (%s) \u2014 skipped\n" % e)
+                FreeCAD.Console.PrintMessage(traceback.format_exc() + "\n")
+                return
 
         FreeCAD.Console.PrintMessage(f"  {type(geo).__name__} \u2014 not yet handled\n")
 

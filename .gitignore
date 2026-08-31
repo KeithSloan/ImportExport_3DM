@@ -8,3 +8,7 @@ sample_scan/
 
 # session scratch / large sample scans
 _to_delete/
+
+# python bytecode
+__pycache__/
+*.pyc
