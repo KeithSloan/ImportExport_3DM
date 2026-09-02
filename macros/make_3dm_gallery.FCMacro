@@ -1,0 +1,108 @@
+# -*- coding: utf-8 -*-
+# make_3dm_gallery — batch-import every .3dm under a directory and build a
+# self-contained HTML gallery of the imported results, for eyeballing import
+# quality across a folder of Rhino sample files.
+#
+# Usage (FreeCAD GUI): Macro -> Macros... -> select this file -> Execute.
+# It prompts for a directory, renders each .3dm to a thumbnail, and writes
+# <dir>/import_gallery/gallery.html (open it in a browser).
+#
+# Notes:
+#  - Uses this addon's import3DM importer.
+#  - A file that HANGS the importer (rare; e.g. an OCCT sew hang) will hang the
+#    macro too — add its basename to SKIP below if you hit one.
+#  - An import that yields an invalid shape renders blank; that is a real import
+#    problem, not a macro bug.
+
+import os, glob, base64, html, traceback
+import FreeCAD, FreeCADGui
+from PySide import QtGui
+
+SKIP = set()          # basenames to skip (e.g. {"v5_ring.3dm"})
+THUMB_W, THUMB_H = 480, 360
+
+def _import3DM():
+    import importlib
+    try:
+        import import3DM as m
+    except Exception:
+        here = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "ImportExport_3DM",
+                            "freecad", "importExport3DM")
+        import sys
+        if here not in sys.path: sys.path.insert(0, here)
+        import import3DM as m
+    return m
+
+def render_one(mod, path, thumbdir):
+    name = os.path.basename(path)
+    thumb = os.path.join(thumbdir, os.path.splitext(name)[0].replace(" ", "_") + ".png")
+    doc = FreeCAD.newDocument("gallery_tmp")
+    status = "OK"
+    try:
+        fi = mod.File3dm(path)
+        fi.parse_objects(doc)
+        doc.recompute()
+        # hide App::Part origins / datum planes so fitAll frames real geometry
+        for o in doc.Objects:
+            if o.TypeId in ("App::Origin", "App::Plane", "App::Line"):
+                try: o.ViewObject.Visibility = False
+                except Exception: pass
+        FreeCADGui.updateGui()
+        av = FreeCADGui.ActiveDocument.ActiveView
+        av.viewIsometric(); av.fitAll()
+        av.saveImage(thumb, THUMB_W, THUMB_H, "White")
+    except Exception as e:
+        status = "ERR " + type(e).__name__
+        FreeCAD.Console.PrintError("  %s: %s\n" % (name, e))
+    finally:
+        FreeCAD.closeDocument(doc.Name)
+    return name, thumb if os.path.exists(thumb) else None, status
+
+def build_html(rows, out):
+    P = ['<!doctype html><meta charset="utf-8"><title>3DM import gallery</title>',
+         '<style>body{font-family:system-ui,sans-serif;background:#f5f5f7;margin:0}'
+         'h1{font-size:17px;padding:16px 20px;background:#fff;border-bottom:1px solid #ddd;margin:0}'
+         '.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;padding:16px}'
+         '.c{background:#fff;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden}'
+         '.c img{width:100%;height:150px;object-fit:contain;background:#fafafa;display:block}'
+         '.cap{padding:6px 8px;font-size:11px;word-break:break-all;border-top:1px solid #eee}'
+         '.err{color:#b00}</style>',
+         '<h1>3DM import gallery — %d files</h1><div class="grid">' % len(rows)]
+    for name, thumb, status in rows:
+        cls = ' class="err"' if status != "OK" else ''
+        if thumb:
+            b = base64.b64encode(open(thumb, "rb").read()).decode()
+            img = '<img src="data:image/png;base64,%s">' % b
+        else:
+            img = '<div style="height:150px"></div>'
+        P.append('<div class="c">%s<div class="cap"%s>%s<br>%s</div></div>'
+                 % (img, cls, html.escape(name), html.escape(status)))
+    P.append('</div>')
+    open(out, "w").write("\n".join(P))
+
+def run():
+    start = FreeCAD.getUserAppDataDir()
+    d = QtGui.QFileDialog.getExistingDirectory(None, "Folder of .3dm files to gallery", start)
+    if not d:
+        return
+    files = sorted(glob.glob(os.path.join(d, "**", "*.3dm"), recursive=True))
+    files = [f for f in files if os.path.basename(f) not in SKIP]
+    if not files:
+        FreeCAD.Console.PrintMessage("No .3dm files found under %s\n" % d)
+        return
+    outdir = os.path.join(d, "import_gallery")
+    os.makedirs(outdir, exist_ok=True)
+    mod = _import3DM()
+    rows = []
+    for i, p in enumerate(files):
+        FreeCAD.Console.PrintMessage("  gallery %d/%d: %s\n" % (i + 1, len(files), os.path.basename(p)))
+        rows.append(render_one(mod, p, outdir))
+    out = os.path.join(outdir, "gallery.html")
+    build_html(rows, out)
+    FreeCAD.Console.PrintMessage("Gallery written: %s\n" % out)
+    try:
+        QtGui.QDesktopServices.openUrl("file://" + out)
+    except Exception:
+        pass
+
+run()

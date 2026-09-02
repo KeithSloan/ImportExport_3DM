@@ -3,7 +3,7 @@
 #
 # A Rhino SubD is imported as an ``App::Part`` container holding two children:
 #
-#   * ``<name>_NURBS`` — a ``Part::FeaturePython`` whose Shape is the exact
+#   * ``<name>_NURBS`` — a ``Part::Feature`` whose Shape is the exact
 #     bicubic B-spline **limit patches** for every regular interior quad face
 #     (Catmull-Clark limit == uniform bicubic B-spline there).  Poles are
 #     B = M . P . M^T with M the uniform-cubic-B-spline central-span -> Bezier
@@ -210,34 +210,6 @@ class SubDCage:
         return None
 
 
-class SubDNurbs:
-    """Part::FeaturePython whose Shape is the SubD limit's regular patches,
-    rebuilt from the linked cage (native Part view provider)."""
-
-    def __init__(self, obj, cage):
-        obj.Proxy = self
-        obj.addProperty("App::PropertyLink", "Cage", "SubD",
-                        "Control-net cage this NURBS shell is built from").Cage = cage
-        obj.addProperty("App::PropertyInteger", "NurbsPatches", "SubD",
-                        "Number of exact NURBS limit patches").NurbsPatches = 0
-
-    def execute(self, obj):
-        cage = getattr(obj, "Cage", None)
-        if cage is None:
-            obj.Shape = Part.Shape()
-            return
-        pts = [(v.x, v.y, v.z) for v in cage.Points]
-        shape, n = build_nurbs_shape(pts, list(cage.Faces), list(cage.Regular))
-        obj.NurbsPatches = n
-        obj.Shape = shape if shape is not None else Part.Shape()
-
-    def __getstate__(self):
-        return None
-
-    def __setstate__(self, state):
-        return None
-
-
 class ViewProviderCage:
     """pivy view provider: draws the control net as an SoIndexedFaceSet with two
     bulk setValues crossings (quads preserved, no triangle Mesh, no C++)."""
@@ -297,15 +269,18 @@ class ViewProviderCage:
 
 # --------------------------------------------------------------------------- #
 def makeSubD(doc, sd, label="SubD"):
-    """Import a rhino3dm SubD as an App::Part holding a NURBS-limit child and a
-    control-net cage child."""
+    """Import a rhino3dm SubD as an App::Part holding a NURBS-limit child
+    (plain Part::Feature — reliable native display, downstream-operable) and a
+    control-net cage child (pivy SoIndexedFaceSet)."""
     if not _HAVE_NUMPY:
         FreeCAD.Console.PrintWarning(
-            "  SubD: numpy unavailable — no NURBS patches (cage only)\n")
+            "  SubD: numpy unavailable \u2014 no NURBS patches (cage only)\n")
     points, faces, regular = extract_subd(sd)
+    _record_subd_bbox(sd)
 
     container = doc.addObject("App::Part", label)
 
+    # control-net cage
     cage = doc.addObject("App::FeaturePython", label + "_Cage")
     SubDCage(cage, points, faces, regular)
     if _gui_up():
@@ -314,14 +289,128 @@ def makeSubD(doc, sd, label="SubD"):
         except Exception as e:
             FreeCAD.Console.PrintWarning("  SubD cage view provider: %s\n" % e)
 
-    nurbs = doc.addObject("Part::FeaturePython", label + "_NURBS")
-    SubDNurbs(nurbs, cage)
+    # NURBS limit patches.  A plain Part::Feature displays reliably; a
+    # Part::FeaturePython with only a data proxy leaves its view provider's
+    # DisplayMode uninitialised and renders nothing.
+    shape, npatch = build_nurbs_shape(points, faces, regular)
+    nurbs = doc.addObject("Part::Feature", label + "_NURBS")
+    if shape is not None:
+        nurbs.Shape = shape
+    nurbs.addProperty("App::PropertyInteger", "NurbsPatches", "SubD",
+                      "Number of exact NURBS limit patches").NurbsPatches = npatch
 
     container.addObject(cage)
     container.addObject(nurbs)
     doc.recompute()
+    if _gui_up():
+        try:
+            nurbs.ViewObject.DisplayMode = "Flat Lines"
+        except Exception:
+            pass
 
     FreeCAD.Console.PrintMessage(
         "  SubD '%s': %d NURBS limit patches + %d-face control-net cage\n"
-        % (label, getattr(nurbs, "NurbsPatches", 0), len(faces)))
+        % (label, npatch, len(faces)))
     return container
+
+
+def _subd_limit_mesh(sd, level=2):
+    """Subdivided limit: subdivide a copy `level` times, take each vertex's exact
+    SurfacePoint, fan-triangulate faces. Returns (verts, tris)."""
+    work = sd
+    try:
+        work = sd.Duplicate()
+        if level > 0:
+            work.Subdivide(level)
+    except Exception:
+        work = sd
+    idx = {}; verts = []
+    for v in work.Vertices:
+        idx[v.Index] = len(verts); q = v.SurfacePoint; verts.append((q.X, q.Y, q.Z))
+    tris = []
+    for fc in work.Faces:
+        vi = [idx[fc.Vertex(k).Index] for k in range(fc.VertexCount)]
+        for k in range(1, len(vi) - 1):
+            tris.append((vi[0], vi[k], vi[k + 1]))
+    return verts, tris
+
+
+def makeSubDSurfaces(doc, sd, label="SubD", level=2):
+    """Import a SubD as its smooth subdivided limit **surface** (a Mesh::Feature) --
+    complete and smooth, the faithful representation of a subdivision surface. This is
+    the default; the NURBS-patch reconstruction (makeSubD) is the alternative."""
+    import Mesh
+    _record_subd_bbox(sd)
+    verts, tris = _subd_limit_mesh(sd, level)
+    m = Mesh.Mesh()
+    for a, b, c in tris:
+        pa, pb, pc = verts[a], verts[b], verts[c]
+        m.addFacet(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2])
+    obj = doc.addObject("Mesh::Feature", label)
+    obj.Mesh = m
+    try:
+        obj.addProperty("App::PropertyBool", "SubDLimitSurface", "SubD",
+                        "This mesh is a SubD subdivided limit surface").SubDLimitSurface = True
+    except Exception:
+        pass
+    FreeCAD.Console.PrintMessage(
+        "  SubD '%s': subdivided limit surface (%d facets)\n" % (label, m.CountFacets))
+    return obj
+
+
+# --- control-net-mesh detection: a Rhino "SubD from mesh" file stores each SubD
+# alongside the coarse control-net mesh it was built from. We record each imported
+# SubD's control-net bounding box, then hide (and relabel) the coincident file mesh
+# so only the SubD result (surface or NURBS) shows by default. Works in both modes.
+_subd_cnet_bboxes = []
+
+
+def reset_subd_bboxes():
+    del _subd_cnet_bboxes[:]
+
+
+def _record_subd_bbox(sd):
+    try:
+        bb = FreeCAD.BoundBox()
+        for v in sd.Vertices:
+            p = v.ControlNetPoint
+            bb.add(FreeCAD.Vector(p.X, p.Y, p.Z))
+        if bb.isValid():
+            _subd_cnet_bboxes.append(bb)
+    except Exception:
+        pass
+
+
+def _bbox_coincident(a, b):
+    da, db = a.DiagonalLength, b.DiagonalLength
+    if da < 1e-9 or db < 1e-9:
+        return False
+    return a.Center.distanceToPoint(b.Center) < 0.3 * max(da, db) and 0.4 < da / db < 2.5
+
+
+def hide_control_meshes(doc):
+    """Hide + relabel the 'SubD from mesh' control-net meshes coincident with an
+    imported SubD, in either import mode, so only the SubD result shows by default.
+    They are still imported (just hidden and labelled). Returns the number hidden."""
+    if not _subd_cnet_bboxes:
+        return 0
+    hidden = 0
+    for o in doc.Objects:
+        if o.TypeId == "Mesh::Feature" and not getattr(o, "SubDLimitSurface", False):
+            try:
+                bb = o.Mesh.BoundBox
+            except Exception:
+                continue
+            if any(_bbox_coincident(bb, sb) for sb in _subd_cnet_bboxes):
+                try:
+                    o.ViewObject.Visibility = False
+                    o.Label = "SubD control net (hidden)"
+                    hidden += 1
+                except Exception:
+                    pass
+    if hidden:
+        FreeCAD.Console.PrintMessage(
+            "  SubD: imported and HID %d 'SubD from mesh' control-net mesh(es) -- "
+            "they duplicate the SubD cage and are labelled 'SubD control net (hidden)'. "
+            "Toggle their visibility in the tree to see them.\n" % hidden)
+    return hidden
