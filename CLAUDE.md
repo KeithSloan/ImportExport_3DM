@@ -41,15 +41,25 @@ testCases/                  ← .3dm test files for round-trip testing
 
 ## Module registration
 
-`__init__.py` registers two handlers:
+`__init__.py` registers two import types (first = default) and one export type:
 
 | Handler | Type | Module |
 |---|---|---|
-| `3DM (*.3dm)` | import | `import3DM` |
+| `3DM (*.3dm)` *(default)* | import | `import3DM` |
+| `3DM Trimmed via trim3dm (*.3dm)` | import | `import_trim_3DM` |
 | `3DM (*.3dm)` | export | `export3DM` |
 
 FreeCAD calls `open(filename)` / `insert(filename, docname)` on import,
 and `export(exportList, filename)` on export.
+
+**SubD import policy (decided 2026-09-02).** SubD objects import under the default
+`3DM` type as their **smooth subdivided limit surface** (`Mesh::Feature`), with the
+file's Rhino control-net meshes auto-hidden (`importSubD.hide_control_meshes`). An
+exact **SubD-as-NURBS** path (`import3DM_subd` / `importSubD.makeSubD`, driven by
+`import3DM._SUBD_AS = "subd"`) exists but is **not registered** as a user-facing
+import type — it is incomplete around extraordinary vertices (holes → blocky) and is
+retained only for future Stam-completion work. Do not re-add it to the dropdown until
+the reconstruction is watertight.
 
 ## Importer architecture (`import3DM.py`)
 
@@ -61,8 +71,8 @@ type:
 | `Brep` | `Part::Feature` via `Part.Shape` from OCCT |
 | `NurbsSurface` | `Part::Feature` with BSplineSurface shell |
 | `NurbsCurve` | `Part::Feature` with BSplineCurve wire |
-| `SubD` | diagnostic message (not imported — NURBS not preserved) |
-| `Mesh` | diagnostic message (not imported — NURBS not preserved) |
+| `SubD` | Smooth limit-surface `Mesh::Feature` (subdivided Catmull–Clark limit); control-net meshes auto-hidden. Exact NURBS-patch path exists but is unregistered/experimental (see Module registration) |
+| `Mesh` | FreeCAD `Mesh::Feature` |
 
 Key importer options (set at top of `import3DM.py`):
 - `merge_brep_faces` — whether to merge Brep faces into a single shell or

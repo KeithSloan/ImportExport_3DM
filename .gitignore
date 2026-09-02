@@ -8,3 +8,13 @@ sample_scan/
 
 # session scratch / large sample scans
 _to_delete/
+
+# python bytecode
+__pycache__/
+*.pyc
+
+# batch import tester (scratch)
+test/
+_gallery/
+_wiki_staging/
+_cmp/

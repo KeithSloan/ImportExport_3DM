@@ -23,7 +23,12 @@
 # *                                                                        *
 # **************************************************************************
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
+
+# SubD import mode, set by the chosen import type in __init__.py:
+#   "surfaces" -> subdivided limit mesh (smooth, default)
+#   "subd"     -> exact NURBS limit patches + control-net cage
+_SUBD_AS = "surfaces"
 
 import FreeCAD
 import os, io, sys
@@ -607,6 +612,10 @@ class File3dm:
         so it needs **no pythonOCC (OCC.Core)** — only rhino3dm >= 8.32."""
         if not doc:
             doc = FreeCAD.newDocument("3dm import")
+        if self.f3dm is None:
+            FreeCAD.Console.PrintError(
+                "  import3DM: could not read the .3dm file (empty or invalid)\n")
+            return
         has_trimmed_brep = False
         try:
             for o in self.f3dm.Objects:
@@ -1325,7 +1334,7 @@ class File3dm:
             obj.Radius = geo.Radius
             if int(FreeCAD.Version()[3].split()[0]) > 29603:
                 obj.Angle1 = startAngle = toFCangle(geo.Arc.Center, geo.PointAtStart)
-                obj.Angle2 = startAngle + geo.Arc.AngleDegree
+                obj.Angle2 = startAngle + geo.Arc.AngleDegrees
             else:
                 obj.Angle0 = startAngle = toFCangle(geo.Arc.Center, geo.PointAtStart)
                 obj.Angle1 = startAngle + geo.Arc.AngleDegrees
@@ -1389,7 +1398,7 @@ class File3dm:
             for i in range(geo.ProfileCount):
                 c = geo.Profile3d(i, 0.0)
                 if c.IsPolyline():
-                    l = c.ToPolyline()
+                    l = c.TryGetPolyline()
                     points = [(l.PointAt(j).X, l.PointAt(j).Y, l.PointAt(j).Z)
                               for j in range(l.SegmentCount)]
                     points.append(points[0])
@@ -1420,10 +1429,21 @@ class File3dm:
             return
 
         if isinstance(geo, r3.SubD):
-            FreeCAD.Console.PrintMessage(
-                f"  SubD: IsSolid={geo.IsSolid} \u2014 NURBS not preserved\n"
-            )
-            return
+            try:
+                import os, sys
+                _d = os.path.dirname(os.path.abspath(__file__))
+                if _d not in sys.path:
+                    sys.path.append(_d)
+                import importSubD
+                if _SUBD_AS == "subd":
+                    return importSubD.makeSubD(doc, geo, "SubD")
+                return importSubD.makeSubDSurfaces(doc, geo, "SubD")
+            except Exception as e:
+                import traceback
+                FreeCAD.Console.PrintError(
+                    "  SubD import failed (%s) \u2014 skipped\n" % e)
+                FreeCAD.Console.PrintMessage(traceback.format_exc() + "\n")
+                return
 
         FreeCAD.Console.PrintMessage(f"  {type(geo).__name__} \u2014 not yet handled\n")
 
@@ -1547,8 +1567,18 @@ def process3DM(doc, filename):
         "Revision",
     ]
 
+    try:
+        import importSubD
+        importSubD.reset_subd_bboxes()
+    except Exception:
+        pass
     fi = File3dm(filename)
     fi.parse_objects(doc)
+    try:
+        import importSubD
+        importSubD.hide_control_meshes(doc)   # hide control-net meshes in both modes
+    except Exception:
+        pass
     FreeCADGui.SendMsgToActiveView("ViewFit")
 
     # pathName = os.path.dirname(os.path.normpath(filename))

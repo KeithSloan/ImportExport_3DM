@@ -25,8 +25,8 @@ path automatically.
 | Extrusion (cylinder/box/pipe) | Native `Part::Cylinder` etc. (analytic parameters read directly) |
 | NurbsSurface | `Part::Feature` with BSplineSurface |
 | NurbsCurve | `Part::Feature` with BSplineCurve wire |
-| SubD | Diagnostic only — rhino3dm exposes SubD topology but no `ToBrep`/`ToNurbs` in Python, so it can't yet be imported as NURBS |
-| Mesh | Diagnostic only — NURBS not preserved by originating app |
+| SubD | Smooth **limit-surface** `Mesh::Feature` per SubD (the SubD's subdivided Catmull–Clark limit — complete and closed); the file's Rhino control-net meshes are auto-hidden. An exact **NURBS-patch** reconstruction also exists but is experimental and not offered as a separate import type — see [Notes on SubD](#notes-on-subd-other-formats-and-analysis) |
+| Mesh | FreeCAD `Mesh::Feature` (NURBS not preserved by the originating app) |
 
 **Native analytic primitives.** With *Import: native primitives* on (default),
 Brep faces flagged by Rhino as planar / cylindrical / conical / spherical are
@@ -207,13 +207,31 @@ Additional Rhino sample files: <https://www.rhino3d.com/download/opennurbs/6/ope
 
 ## Notes on SubD, other formats, and analysis
 
-- **SubD.** A subdivision surface is a coarse control cage plus subdivision rules
-  whose smooth *limit* is (away from extraordinary vertices) a set of bicubic
-  B-spline patches — so it sits between mesh and NURBS and converts to either,
-  but is *not* stored as both. rhino3dm exposes SubD topology and `Subdivide()`
-  but no `ToBrep`/`ToNurbs` in the Python bindings (RhinoCommon has `SubD.ToBrep`,
-  so this is an unwrapped-binding gap), which is why SubD is not yet imported as
-  NURBS. A control-cage-as-mesh import is the practical near-term option.
+- **SubD (imported as its smooth limit surface).** A subdivision surface is a
+  coarse control cage whose smooth *limit* is the shape it converges to under
+  Catmull–Clark subdivision. rhino3dm's Python bindings expose the SubD topology
+  and `Subdivide()` but no `ToBrep`/`ToNurbs`, so the module subdivides the SubD a
+  couple of levels and imports the resulting **limit surface** as a single smooth
+  `Mesh::Feature` per SubD — complete, closed and faithful to the Rhino shape. The
+  Rhino control-net meshes carried in the same file are detected and their
+  visibility is switched **off** on import (relabelled “SubD control net (hidden)”)
+  so the tree stays tidy but nothing is discarded. This is what the plain **3DM**
+  importer does with every SubD.
+- **SubD as exact NURBS patches (experimental, not a menu option).** A separate
+  reconstruction (`importSubD.makeSubD`) emits, for every *regular* interior quad
+  (valence-4 smooth corners), the **exact** uniform bicubic B-spline limit patch of
+  its 4×4 control-net one-ring — poles `B = M·P·Mᵀ` with the standard
+  uniform-B-spline→Bézier matrix `M`, verified against rhino3dm's own `SurfacePoint`
+  to ~1e-15 — as native `Part` B-spline faces, plus the control-net cage drawn as
+  quads by a lightweight pivy `SoIndexedFaceSet` view provider. It is **geometrically
+  exact where it exists**, but **incomplete**: *extraordinary* regions (n-gon faces,
+  valence≠4 vertices, boundaries, creases) have no single clean patch, so the shell
+  is left open/holey and OCCT tessellates it coarsely — the result looks blocky and
+  the cage shows through. Because there is no case today where that is preferable to
+  the smooth limit surface, it is **not registered as a user-facing import type**; the
+  code is retained (`import3DM._SUBD_AS = "subd"`) for future completion via **Stam**
+  eigenbasis evaluation at the extraordinary points, which would close the shell and
+  make it a clean, downstream-operable (e.g. CAM) NURBS target.
 - **NURBS and FEM.** FreeCAD's FEM workbench is mesh-based, which discretizes
   away the exact NURBS geometry. The meshless alternative for NURBS is
   **isogeometric analysis (IGA)** — using the NURBS basis directly (open-source:
@@ -222,6 +240,20 @@ Additional Rhino sample files: <https://www.rhino3d.com/download/opennurbs/6/ope
   realistic path rather than native support.
 
 ## Changes
+
+### Unreleased — SubD import (as smooth limit surface)
+
+- **SubD surfaces now import** as a single smooth **limit-surface `Mesh::Feature`**
+  per SubD (the subdivided Catmull–Clark limit — complete and closed), under the
+  default **3DM** import type. The Rhino control-net meshes carried in the file are
+  auto-hidden (relabelled “SubD control net (hidden)”) rather than cluttering the
+  tree. Previously a SubD produced only a diagnostic message. New module
+  `importSubD.py`. (On the `SubD` branch.)
+- An exact **NURBS-patch + control-net cage** reconstruction is also present
+  (`importSubD.makeSubD`) but is **experimental and not registered as an import
+  type** — it is geometrically exact on regular quad regions yet incomplete at
+  extraordinary vertices (holes → blocky tessellation). Retained for future
+  completion (Stam evaluation → watertight NURBS → CAM-ready).
 
 ### Import 0.3.1 — trimmed-face import crash fix
 
