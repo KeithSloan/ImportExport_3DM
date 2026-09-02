@@ -23,7 +23,7 @@
 # *                                                                        *
 # **************************************************************************
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 
 # SubD import mode, set by the chosen import type in __init__.py:
 #   "surfaces" -> subdivided limit mesh (smooth, default)
