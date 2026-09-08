@@ -716,17 +716,22 @@ class File3dm:
         except Exception:
             has_trimmed_brep = False
         if _HAS_TRIM_API and has_trimmed_brep:
-            # Enhanced path: when the file is Brep-only with trimmed Breps and
-            # the compiled trim3dm extension is available, use it — it reads the
-            # real 2D trim data, so complex solids (v4_TreeFrog: the "missing
-            # eye") import completely.  Mixed files (curves/meshes/points next
-            # to Breps) stay on the native path below.
-            if self._file_is_breps_only() and self._trim3dm_available():
+            # Enhanced path: whenever the compiled trim3dm extension is
+            # available, use it for the trimmed Breps — it reads the real 2D
+            # trim data, so nothing is dropped (TreeFrog's eye, HumanHead's
+            # missing surfaces).  Everything else in the file (curves, meshes,
+            # points, untrimmed single-surface Breps) is imported natively
+            # afterwards, so mixed files stay complete.
+            if self._trim3dm_available():
                 FreeCAD.Console.PrintMessage(
                     "  import path: trim3dm (enhanced trimmed Breps)\n")
                 try:
                     _trim_mod = self._import_trim3dm_module()
                     _trim_mod._read_into(doc, self.path)
+                    n_extra = self._import_nontrim_objects(doc)
+                    FreeCAD.Console.PrintMessage(
+                        f"  trim3dm: +{n_extra} non-Brep object(s) imported "
+                        "natively\n")
                 except Exception as e:
                     FreeCAD.Console.PrintError(
                         f"  trim3dm import failed ({e}) — falling back to "
@@ -775,6 +780,37 @@ class File3dm:
         except Exception:
             import import_trim_3DM as _it
             return _it
+
+    def _import_nontrim_objects(self, doc):
+        """Import the objects the trim3dm reader does not produce: curves,
+        meshes, points, lights-free surfaces, and untrimmed single-surface
+        Breps.  Adds them under the App::Part that import_trim_3DM created."""
+        part = None
+        try:
+            for o in doc.Objects:
+                if o.TypeId == "App::Part":
+                    part = o
+                    break
+        except Exception:
+            part = None
+        n = 0
+        for r3_obj in self.f3dm.Objects:
+            geo = r3_obj.Geometry
+            attrs = r3_obj.Attributes
+            if isinstance(geo, r3.Brep):
+                # multi-face or trimmed Breps were handled by trim3dm
+                if len(geo.Faces) > 1 or not geo.IsSurface:
+                    continue
+            obj = self.import_geometry(doc, geo)
+            if obj is None:
+                continue
+            if attrs.Name:
+                obj.Label = attrs.Name
+            self._apply_visibility(obj, attrs)
+            if part is not None:
+                part.addObject(obj)
+            n += 1
+        return n
 
     def _trim3dm_available(self):
         try:
