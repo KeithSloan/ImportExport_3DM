@@ -474,6 +474,7 @@ def toFCangle(center, start):
 
 class File3dm:
     def __init__(self, path):
+        self.path = path
         self.f3dm = r3.File3dm.Read(path)
 
     def _try_trim_reconstruction(self, doc, ns_geo, curve_geos, label):
@@ -715,15 +716,71 @@ class File3dm:
         except Exception:
             has_trimmed_brep = False
         if _HAS_TRIM_API and has_trimmed_brep:
-            FreeCAD.Console.PrintMessage(
-                "  import path: OFFICIAL Brep trim topology (native Part)\n")
-            self.parse_rhino_breps(doc)
+            # Enhanced path: when the file is Brep-only with trimmed Breps and
+            # the compiled trim3dm extension is available, use it — it reads the
+            # real 2D trim data, so complex solids (v4_TreeFrog: the "missing
+            # eye") import completely.  Mixed files (curves/meshes/points next
+            # to Breps) stay on the native path below.
+            if self._file_is_breps_only() and self._trim3dm_available():
+                FreeCAD.Console.PrintMessage(
+                    "  import path: trim3dm (enhanced trimmed Breps)\n")
+                try:
+                    _trim_mod = self._import_trim3dm_module()
+                    _trim_mod._read_into(doc, self.path)
+                except Exception as e:
+                    FreeCAD.Console.PrintError(
+                        f"  trim3dm import failed ({e}) — falling back to "
+                        "native reconstruction\n")
+                    for o in list(doc.Objects):
+                        try:
+                            doc.removeObject(o.Name)
+                        except Exception:
+                            pass
+                    FreeCAD.Console.PrintMessage(
+                        "  import path: OFFICIAL Brep trim topology (native Part)\n")
+                    self.parse_rhino_breps(doc)
+            else:
+                FreeCAD.Console.PrintMessage(
+                    "  import path: OFFICIAL Brep trim topology (native Part)\n")
+                self.parse_rhino_breps(doc)
         else:
             FreeCAD.Console.PrintMessage(
                 f"  import path: legacy (TrimAPI={_HAS_TRIM_API} "
                 f"pythonOCC={_PYTHONOCC} trimmedBrep={has_trimmed_brep})\n")
             self.parse_objects_legacy(doc)
         self._report_import_tail()
+
+    def _file_is_breps_only(self):
+        """True when every object in the file is a Brep (no curves/meshes/
+        points/lights) — the only case where the whole file can be handed to
+        the trim3dm face importer without losing other geometry types."""
+        try:
+            n = 0
+            for o in self.f3dm.Objects:
+                n += 1
+                if not isinstance(o.Geometry, r3.Brep):
+                    return False
+            return n > 0
+        except Exception:
+            return False
+
+    @staticmethod
+    def _import_trim3dm_module():
+        """import_trim_3DM under its FreeCAD package name (top-level name only
+        exists when the addon dir is on sys.path)."""
+        try:
+            import importlib
+            return importlib.import_module(
+                "freecad.importExport3DM.import_trim_3DM")
+        except Exception:
+            import import_trim_3DM as _it
+            return _it
+
+    def _trim3dm_available(self):
+        try:
+            return self._import_trim3dm_module()._import_trim3dm() is not None
+        except Exception:
+            return False
 
     def _report_import_tail(self):
         """File-level notes printed once per import: empty-file warning, named
