@@ -79,7 +79,18 @@ Open **Edit → Preferences → Import-Export → ImportExport 3DM**:
 | Export Cylinder / Cone / Sphere / Torus as native primitives | **Off** | When on, writes analytic surfaces as exact rhino3dm primitives (smaller files). When off (default), they are written as exact bounded rational NURBS, which reconstructs trimmed faces more reliably on re-import. |
 | **Import: native primitives** (`ImportNativePrimitives`) | **On** | Rebuild planar/cylindrical/conical/spherical Brep faces on native OCCT analytic surfaces (fitted, with per-face tolerance check and NURBS fallback). Turn off to import every face as NURBS. Requires numpy. |
 | **Import: create groups** | **On** | Mirrors each named `.3dm` group as an `App::DocumentObjectGroup` so an object's faces and boundary curves stay together. |
+| **Import: respect layer visibility** (`ImportRespectLayerVisibility`) | **On** | Rhino files (especially tutorials) keep construction geometry on layers that are switched *off*. When on, those objects are still imported but their FreeCAD view is hidden, so the 3D view matches what Rhino shows. Off imports everything visible. |
+| **Import: sew face limit** (`ImportSewFaceLimit`) | **8** | Maximum faces stitched into a shell/solid with OCCT `Part.Shell` during Brep import. OCCT sewing can hang un-interruptibly on some files (e.g. `v5_ring.3dm`), so larger Breps are imported as a valid compound of their faces instead — visually identical, safe against a frozen FreeCAD. Raise it to sew larger shells at your own risk. |
 | Import: try to make shell/solid | Off | After collecting a group's surfaces, attempt `Part.makeShell()` (and `makeSolid()` if closed); falls back to individual surfaces. |
+
+### Import behaviour for non-geometric objects
+
+Rhino `Point` / `PointCloud` objects import as a visible
+`Points::Feature` (use the **Points** workbench to tweak point size). Rhino
+`Light` objects, `TextDot` annotations and the file's named views have no
+FreeCAD equivalent: they are skipped with an informational Report View message
+rather than leaving a silent blank document. A `.3dm` file that contains no
+geometry at all (only the default scaffold) prints an explicit warning.
 
 ### Controlling the imported tree structure — *Import: create groups*
 

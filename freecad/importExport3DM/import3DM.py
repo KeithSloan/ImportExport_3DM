@@ -23,7 +23,7 @@
 # *                                                                        *
 # **************************************************************************
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 # SubD import mode, set by the chosen import type in __init__.py:
 #   "surfaces" -> subdivided limit mesh (smooth, default)
@@ -81,6 +81,34 @@ try:
     _HAVE_NUMPY = True
 except Exception:
     _HAVE_NUMPY = False
+
+_PREFS_NS = "User parameter:BaseApp/Preferences/Mod/ImportExport_3DM"
+
+
+def _pref_bool(name, default=True):
+    """Read a bool preference from this module's preferences group."""
+    try:
+        return FreeCAD.ParamGet(_PREFS_NS).GetBool(name, default)
+    except Exception:
+        return default
+
+
+def _pref_int(name, default):
+    try:
+        return FreeCAD.ParamGet(_PREFS_NS).GetInt(name, default)
+    except Exception:
+        return default
+
+
+# ── guarded sewing of reconstructed Brep faces (issue #10) ────────────────────
+# Rebuilding a Rhino Brep face-by-face and stitching it with Part.Shell()/Solid()
+# is an OCCT sew that can HANG un-interruptibly (e.g. V5/v5_ring.3dm) or produce
+# an invalid solid — and a hang inside FreeCAD cannot be interrupted or timed out
+# from Python.  The importer therefore only sews SMALL face sets in-process and
+# falls back to a Part.Compound of the individually-valid faces for anything
+# larger, so a pathological file can never wedge FreeCAD.  Users who accept the
+# hang risk can raise the cap via the ImportSewFaceLimit preference.
+_SEW_FACE_LIMIT_DEFAULT = 8     # faces: still sew in-process at/below this
 
 FreeCAD.Console.PrintMessage(
     f"import3DM {__version__}: pythonOCC={_PYTHONOCC}  Part.Face={_FREECAD_MAKE_FACE}"
@@ -349,6 +377,65 @@ def _add_as_shell(doc, add_fn, shapes, labels, label='Shell'):
             add_fn(obj)
 
 
+# ── guarded sew helpers (issue #10: v5_ring OCCT sew hang) ────────────────────
+
+def _ok_brep_shape(shp):
+    """Cheap sanity of a shape before it becomes a Part::Feature: non-null,
+    valid, and with a finite bounding box (an untrimmed-fallback face that
+    reaches the parametric max extent is caught by its caller, not here)."""
+    try:
+        if shp is None or shp.isNull():
+            return False
+        if not shp.isValid():
+            return False
+        bb = shp.BoundBox
+        return (bb.XLength < 1e90 and bb.YLength < 1e90
+                and bb.ZLength < 1e90 and bb.DiagonalLength < 1e90)
+    except Exception:
+        return False
+
+
+def _sew_inprocess(faces):
+    """Sew *faces* into a shell (solid when closed) in this process.
+    Returns (shape, kind).  On any failure returns (None, None) — the caller
+    falls back to a compound, it never lets a partial shell through."""
+    shape = None
+    kind = None
+    try:
+        shell = Part.Shell(faces)
+        if shell.isClosed():
+            try:
+                solid = Part.Solid(shell)
+                if solid.Volume < 0:
+                    solid.reverse()
+                if _ok_brep_shape(solid):
+                    return solid, "Solid"
+            except Exception:
+                pass
+            if _ok_brep_shape(shell):
+                return shell, "Shell"
+        else:
+            if _ok_brep_shape(shell):
+                return shell, "Shell(open)"
+    except Exception as e:
+        FreeCAD.Console.PrintMessage(
+            f"  sew: Part.Shell failed ({type(e).__name__}: {e}) — "
+            f"falling back to compound\n")
+        return None, None
+    return shape, kind
+
+
+def _compound_fallback(faces):
+    """Best-effort Part.Compound of *faces* for when sewing is skipped/failed."""
+    try:
+        comp = Part.Compound(faces)
+        if _ok_brep_shape(comp):
+            return comp, "Compound"
+    except Exception:
+        pass
+    return None, None
+
+
 if open.__module__ == "__builtin__":
     pythonopen = (
         open  # to distinguish python built-in open function from the one declared here
@@ -612,6 +699,8 @@ class File3dm:
         so it needs **no pythonOCC (OCC.Core)** — only rhino3dm >= 8.32."""
         if not doc:
             doc = FreeCAD.newDocument("3dm import")
+        self._vis_shown = 0
+        self._vis_hidden = 0
         if self.f3dm is None:
             FreeCAD.Console.PrintError(
                 "  import3DM: could not read the .3dm file (empty or invalid)\n")
@@ -628,11 +717,41 @@ class File3dm:
         if _HAS_TRIM_API and has_trimmed_brep:
             FreeCAD.Console.PrintMessage(
                 "  import path: OFFICIAL Brep trim topology (native Part)\n")
-            return self.parse_rhino_breps(doc)
-        FreeCAD.Console.PrintMessage(
-            f"  import path: legacy (TrimAPI={_HAS_TRIM_API} "
-            f"pythonOCC={_PYTHONOCC} trimmedBrep={has_trimmed_brep})\n")
-        return self.parse_objects_legacy(doc)
+            self.parse_rhino_breps(doc)
+        else:
+            FreeCAD.Console.PrintMessage(
+                f"  import path: legacy (TrimAPI={_HAS_TRIM_API} "
+                f"pythonOCC={_PYTHONOCC} trimmedBrep={has_trimmed_brep})\n")
+            self.parse_objects_legacy(doc)
+        self._report_import_tail()
+
+    def _report_import_tail(self):
+        """File-level notes printed once per import: empty-file warning, named
+        views (non-geometric), and how many objects were hidden because their
+        Rhino layer is invisible (issue #5 / #6 / #9)."""
+        try:
+            n_objects = len(self.f3dm.Objects)
+        except Exception:
+            n_objects = 0
+        if n_objects == 0:
+            FreeCAD.Console.PrintWarning(
+                "  The .3dm file contains no geometry objects — nothing to "
+                "import (blank document).\n")
+        try:
+            nv = self.f3dm.NamedViews
+            n_nv = len(nv) if nv is not None else 0
+        except Exception:
+            n_nv = 0
+        if n_nv:
+            FreeCAD.Console.PrintMessage(
+                f"  {n_nv} named view(s) in the file — not imported (FreeCAD "
+                f"has no viewport object); use FreeCAD's own views instead.\n")
+        shown = getattr(self, "_vis_shown", 0)
+        hidden = getattr(self, "_vis_hidden", 0)
+        if shown or hidden:
+            FreeCAD.Console.PrintMessage(
+                f"  layer visibility: {shown} object(s) shown, {hidden} hidden "
+                f"(objects on invisible Rhino layers)\n")
 
     # ---- native (FreeCAD Part) face construction from Brep loop/trim topology --
     #
@@ -818,6 +937,13 @@ class File3dm:
         if outer is None:
             return None, "no-outer"
 
+        def _okf(f):
+            try:
+                return (f is not None and not f.isNull() and f.isValid()
+                        and f.Area > 1e-9)
+            except Exception:
+                return False
+
         def _mk(surf):
             try:
                 f = Part.Face(surf, [outer] + inners) if inners else Part.Face(surf, outer)
@@ -825,11 +951,31 @@ class File3dm:
                     f.fix(1e-3, 1e-3, 1e-3)
                 except Exception:
                     pass
-                if f.Area > 1e-9:
+                if _okf(f):
                     return f
             except Exception:
                 pass
             return None
+
+        # A properly-trimmed face is about the size of its outer boundary wire.
+        # When Part.Face trims to the COMPLEMENT (analytic surfaces) or a trim
+        # reconstruction fails and falls back to the untrimmed surface, the face
+        # is much bigger than its wire — the "spiky / untrimmed-edge" artefact
+        # (v1_Camera, Soccer, …).  Faces more than a few times larger than the
+        # wire are rejected so they never render as stray sheets.
+        try:
+            wd = outer.BoundBox.DiagonalLength
+        except Exception:
+            wd = 0.0
+        _RATIO = 3.0
+
+        def _within_wire(f):
+            if not wd or wd < 1e-9:
+                return True
+            try:
+                return f.BoundBox.DiagonalLength <= _RATIO * wd
+            except Exception:
+                return True
 
         # tier 0 — native analytic primitive.  Part.Face on a full analytic
         # surface (sphere/cylinder) can trim to the COMPLEMENT — the large rest of
@@ -839,10 +985,8 @@ class File3dm:
         asurf, kind = self._fit_analytic_surface(face)
         if asurf is not None:
             f = _mk(asurf)
-            if f is not None:
-                wd = outer.BoundBox.DiagonalLength
-                if wd < 1e-9 or f.BoundBox.DiagonalLength <= 2.0 * wd:
-                    return f, kind
+            if f is not None and _within_wire(f):
+                return f, kind
         # tier 1 — NURBS surface
         try:
             nsurf = self.create_nurbs_surface(face.UnderlyingSurface().ToNurbsSurface())
@@ -850,38 +994,78 @@ class File3dm:
             nsurf = None
         if nsurf is not None:
             f = _mk(nsurf)
-            if f is not None:
+            if f is not None and _within_wire(f):
                 return f, "NURBS"
         # tier 2 — filled face from the 3-D boundary
         if outer_edges:
             try:
                 f = Part.makeFilledFace(outer_edges)
-                if f is not None and f.Area > 1e-9:
+                if _okf(f):
                     if inners:
                         try:
                             fh = f.cutHoles(inners)
                             fh.fix(1e-3, 1e-3, 1e-3)
-                            if fh.Area > 1e-9:
+                            if _okf(fh):
                                 f = fh
                         except Exception:
                             pass
-                    return f, "filled"
+                    if _within_wire(f):
+                        return f, "filled"
             except Exception:
                 pass
-        # tier 3 — untrimmed surface
+        # tier 3 — untrimmed surface.  Only acceptable when it is about the size
+        # of the trim wire; a much larger untrimmed extent is the spiky
+        # untrimmed-edge artefact and is dropped instead.
         if nsurf is not None:
             try:
                 f = nsurf.toShape()
-                if f.Area > 1e-9:
+                if _okf(f) and _within_wire(f):
                     return f, "untrimmed"
             except Exception:
                 pass
         return None, "fail"
 
-    def _import_brep_official(self, doc, brep, label):
-        """Reconstruct a full Rhino Brep as a trimmed Part::Feature — a solid if
-        the shell closes, otherwise a shell/compound of correctly-trimmed faces.
-        Returns (obj, (n_ok, n_fail, how)) or (None, stats)."""
+    # ---- layer visibility ----------------------------------------------------
+    # Rhino model files (tutorials!) frequently keep step-by-step construction
+    # geometry on layers that are switched OFF.  FreeCAD has no layer table, so
+    # everything used to import and render — the clutter beneath/around the real
+    # model (issue #9: Soccer stray wireframe box, Camera spiky panels).  When the
+    # preference is on (default), objects on invisible layers are still imported
+    # but their FC ViewObject is hidden so the 3D view matches the Rhino file.
+
+    def _apply_visibility(self, obj, attrs):
+        try:
+            if obj is None or attrs is None:
+                return
+            respect = getattr(self, "_respect_layers", True)
+            li = attrs.LayerIndex
+            hidden = False
+            if li is not None and li >= 0:
+                try:
+                    layer = self.f3dm.Layers[li]
+                    hidden = not layer.Visible
+                except Exception:
+                    hidden = False
+            if not respect:
+                return                       # don't count/hide when disabled
+            # count shown/hidden for the end-of-import note
+            if hidden:
+                self._vis_hidden = getattr(self, "_vis_hidden", 0) + 1
+            else:
+                self._vis_shown = getattr(self, "_vis_shown", 0) + 1
+            if hidden:
+                try:
+                    obj.ViewObject.Visibility = False
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # ---- official Brep reconstruction helpers --------------------------------
+
+    def _build_brep_entry(self, doc, brep, label):
+        """Reconstruct every face of *brep*; return a task entry dict, or None
+        when no usable face could be built (caller falls back to raw geometry)."""
         faces = []
         n_ok = n_fail = 0
         how = {}
@@ -899,45 +1083,60 @@ class File3dm:
             else:
                 n_fail += 1
         if not faces:
-            return None, (n_ok, n_fail, "no faces")
-        # sew natively — solid if the shell closes, else shell, else compound
-        shape = None
-        kind = "?"
-        try:
-            shell = Part.Shell(faces)
-            # Only attempt a Solid on a genuinely closed shell.  Part.Solid()
-            # on an open shell (a single trimmed face, or a shell containing a
-            # holed face) can raise an OCCT Standard_Failure that is *not*
-            # surfaced as a catchable Python exception -- it aborts / segfaults
-            # FreeCAD instead of being caught below.  Guarding on isClosed()
-            # means an open shell never reaches Part.Solid.
-            # (Ref: v1_T-Joint2.3dm hard crash on the first freeform holed face.)
-            if shell.isClosed():
-                try:
-                    solid = Part.Solid(shell)
-                    if solid.Volume < 0:
-                        solid.reverse()
-                    shape = solid
-                    kind = "Solid"
-                except Exception:
-                    shape = shell
-                    kind = "Shell"
-            else:
-                shape = shell
-                kind = "Shell(open)"
-        except Exception:
-            comp = Part.Compound(faces)
-            try:
-                comp = comp.removeSplitter()
-            except Exception:
-                pass
-            shape = comp
-            kind = "Compound"
+            return None
+        return {"faces": faces, "how": how, "n_ok": n_ok, "n_fail": n_fail,
+                "label": label, "shape": None, "kind": None}
+
+    def _sew_brep_entry(self, entry):
+        """Resolve entry['shape']/entry['kind'] for a Brep task.
+
+        OCCT sewing can hang the process (issue #10: v5_ring), so only small
+        face sets are sewn in-process (ImportSewFaceLimit); larger ones are
+        imported as a Part.Compound of the individually-valid faces — visually
+        the same model, at the cost of not being a single shell/solid."""
+        faces = entry["faces"]
+        how = entry["how"]
+        n = len(faces)
+        label = entry["label"]
+        detail = " [" + " ".join(f"{k}:{v}" for k, v in sorted(how.items())) + "]"
+        limit = getattr(self, "_sew_limit", _SEW_FACE_LIMIT_DEFAULT)
+        if n == 1:
+            entry["shape"], entry["kind"] = faces[0], "Face"
+        elif n <= limit:
+            shape, kind = _sew_inprocess(faces)
+            if shape is None:
+                shape, kind = _compound_fallback(faces)
+            entry["shape"], entry["kind"] = shape, kind
+            if shape is None:
+                FreeCAD.Console.PrintMessage(
+                    f"  {label}: could not build any shape from {n} faces\n")
+                return True
+            if kind == "Compound":
+                FreeCAD.Console.PrintMessage(
+                    f"  {label}: sew failed — imported {n} faces as a compound\n")
+        else:
+            FreeCAD.Console.PrintMessage(
+                f"  {label}: {n} faces > sew limit {limit} — imported as a "
+                f"compound (safe against OCCT sew hangs)\n")
+            shape, kind = _compound_fallback(faces)
+            entry["shape"], entry["kind"] = shape, kind
+        entry["_detail"] = detail
+        return True
+
+    def _make_brep_feature(self, doc, entry):
+        """Create the Part::Feature for a resolved Brep entry and log it."""
+        shape = entry.get("shape")
+        if shape is None:
+            return None
         obj = doc.addObject("Part::Feature", "Brep")
         obj.Shape = shape
-        obj.Label = label
-        detail = kind + " [" + " ".join(f"{k}:{v}" for k, v in sorted(how.items())) + "]"
-        return obj, (n_ok, n_fail, detail)
+        obj.Label = entry["label"]
+        n_ok, n_fail = entry["n_ok"], entry["n_fail"]
+        FreeCAD.Console.PrintMessage(
+            f"  {entry['label']}: {entry['kind']}{entry.get('_detail', '')} "
+            f"from {n_ok}/{n_ok + n_fail} trimmed faces"
+            + (f" ({n_fail} face fallback)" if n_fail else "") + "\n")
+        return obj
 
     def parse_rhino_breps(self, doc=None):
         """Import a Rhino-authored .3dm: Breps via official trim-topology
@@ -954,6 +1153,11 @@ class File3dm:
         self._native_primitives = prefs.GetBool("ImportNativePrimitives", True) and _HAVE_NUMPY
         FreeCAD.Console.PrintMessage(
             f"  ImportNativePrimitives={self._native_primitives}\n")
+        self._respect_layers = prefs.GetBool("ImportRespectLayerVisibility", True)
+        self._sew_limit = prefs.GetInt("ImportSewFaceLimit",
+                                       _SEW_FACE_LIMIT_DEFAULT)
+        if self._sew_limit < 1:
+            self._sew_limit = 1
 
         grp_names = {}
         for gi in range(len(self.f3dm.Groups)):
@@ -974,6 +1178,12 @@ class File3dm:
                 fc_groups[gi] = grp
             return fc_groups[gi]
 
+        def add_to(cont, obj, attrs):
+            if obj is None:
+                return
+            self._apply_visibility(obj, attrs)
+            cont.addObject(obj)
+
         n_brep = n_other = 0
         for i in range(len(self.f3dm.Objects)):
             r3_obj = self.f3dm.Objects[i]
@@ -983,29 +1193,29 @@ class File3dm:
             cont = container_for(attrs)
             if isinstance(geo, r3.Brep) and (len(geo.Faces) > 1 or not geo.IsSurface):
                 label = name if name else "Brep"
-                obj, stats = self._import_brep_official(doc, geo, label)
-                n_ok, n_fail, kind = stats
-                if obj is None:
+                entry = self._build_brep_entry(doc, geo, label)
+                if entry is None:
                     FreeCAD.Console.PrintMessage(
-                        f"  {label}: Brep reconstruction failed "
-                        f"({n_ok} ok / {n_fail} fail) — importing raw geometry\n")
+                        f"  {label}: Brep reconstruction failed — "
+                        f"importing raw geometry\n")
                     fb = self.import_geometry(doc, geo)
                     if fb:
                         fb.Label = label
-                        cont.addObject(fb)
+                        add_to(cont, fb, attrs)
                     continue
-                FreeCAD.Console.PrintMessage(
-                    f"  {label}: {kind} from {n_ok}/{n_ok + n_fail} trimmed faces"
-                    + (f" ({n_fail} face fallback)" if n_fail else "") + "\n")
-                cont.addObject(obj)
-                n_brep += 1
+                if self._sew_brep_entry(entry):
+                    obj = self._make_brep_feature(doc, entry)
+                    if obj is None:
+                        continue
+                    add_to(cont, obj, attrs)
+                    n_brep += 1
             else:
                 obj = self.import_geometry(doc, geo)
                 if not obj:
                     continue
                 if name:
                     obj.Label = name
-                cont.addObject(obj)
+                add_to(cont, obj, attrs)
                 n_other += 1
         doc.recompute()
         try:
@@ -1028,6 +1238,7 @@ class File3dm:
         # a single shell, and Part.makeSolid() if the shell closes.  Falls back
         # to individual face objects if stitching fails.
         make_shell = prefs.GetBool("ImportMakeShell", False)
+        self._respect_layers = prefs.GetBool("ImportRespectLayerVisibility", True)
 
         # Build a map from rhino group index → group name
         grp_names = {}
@@ -1152,6 +1363,7 @@ class File3dm:
                 continue
             if obj_name:
                 obj.Label = obj_name
+            self._apply_visibility(obj, r3_obj.Attributes)
             part.addObject(obj)
 
         # Stitch ungrouped surfaces into a shell/solid (or fall back individually)
@@ -1196,7 +1408,8 @@ class File3dm:
                 fc_grp.Label = gname
                 part.addObject(fc_grp)
 
-            def _add(obj):
+            def _add(obj, attrs=None):
+                self._apply_visibility(obj, attrs)
                 if fc_grp:
                     fc_grp.addObject(obj)
                 else:
@@ -1251,15 +1464,15 @@ class File3dm:
                     obj = self.import_geometry(doc, surf_r3obj.Geometry)
                     if obj:
                         obj.Label = surf_label
-                        _add(obj)
+                        _add(obj, surf_r3obj.Attributes)
                     for cr in curve_r3objs:
                         c_obj = self.import_geometry(doc, cr.Geometry)
                         if c_obj:
                             c_obj.Label = "NurbsCurve"
-                            _add(c_obj)
+                            _add(c_obj, cr.Attributes)
                 else:
                     obj.Label = surf_label
-                    _add(obj)
+                    _add(obj, surf_r3obj.Attributes)
 
             if not make_shell and (trim_ok or trim_fail):
                 gap_total = getattr(self, '_trim_gap_closed', 0)
@@ -1287,30 +1500,88 @@ class File3dm:
                 obj_name = r3_obj.Attributes.Name
                 if obj_name:
                     obj.Label = obj_name
-                _add(obj)
+                _add(obj, r3_obj.Attributes)
 
         doc.recompute()
 
+    def _make_points_object(self, doc, pts):
+        """Build a visible Points::Feature from rhino Point/PointCloud locations
+        (issue #4: point objects imported but nothing rendered)."""
+        try:
+            import Points
+        except Exception as e:
+            FreeCAD.Console.PrintMessage(
+                f"  Points workbench not available — {len(pts)} point(s) skipped "
+                f"({e})\n")
+            return None
+        if not pts:
+            return None
+        fc = Points.Points()
+        vecs = []
+        for p in pts:
+            try:
+                vecs.append(FreeCAD.Vector(float(p.X), float(p.Y), float(p.Z)))
+            except Exception:
+                try:
+                    vecs.append(FreeCAD.Vector(*p))
+                except Exception:
+                    continue
+        if not vecs:
+            return None
+        try:
+            fc.addPoints(vecs)
+        except Exception:
+            fc = Points.Points(vecs)      # older API: points via constructor
+        obj = doc.addObject("Points::Feature", "Points")
+        obj.Points = fc
+        try:
+            vo = obj.ViewObject
+            vo.PointSize = 4
+            vo.Visibility = True
+        except Exception:
+            pass   # headless / no GUI — the object itself still holds the points
+        return obj
+
     def import_geometry(self, doc, geo):
         if isinstance(geo, r3.Brep):
+            # Single-face / IsSurface Breps: build the surface patch first and
+            # only create the FC object when the shape is actually usable — a
+            # degenerate surface must not import as an invisible/wireframe ghost.
             if geo.IsSurface:
+                try:
+                    shp = self.create_surface(geo.Surfaces[0]).toShape()
+                except Exception:
+                    shp = None
+                if shp is None or not _ok_brep_shape(shp):
+                    FreeCAD.Console.PrintMessage(
+                        "  Brep Surface — invalid/degenerate; not imported\n")
+                    return None
                 # Untrimmed single-face Brep — use the surface directly.
                 obj = doc.addObject("Part::Feature", "Brep Surface")
-                obj.Shape = self.create_surface(geo.Surfaces[0]).toShape()
-            elif len(geo.Surfaces) == 1:
+                obj.Shape = shp
+                return obj
+            if len(geo.Surfaces) == 1:
                 # Single-face trimmed Brep (e.g. created by
                 # rhino3dm Brep.CreateFromSurface).  Import the underlying
                 # surface rather than falling through to edge extraction,
                 # which would produce a wireframe rectangle instead of a face.
+                try:
+                    shp = self.create_surface(geo.Surfaces[0]).toShape()
+                except Exception:
+                    shp = None
+                if shp is None or not _ok_brep_shape(shp):
+                    FreeCAD.Console.PrintMessage(
+                        "  NurbsSurface — invalid/degenerate; not imported\n")
+                    return None
                 obj = doc.addObject("Part::Feature", "NurbsSurface")
-                obj.Shape = self.create_surface(geo.Surfaces[0]).toShape()
-            else:
-                shapes = []
-                for i in range(len(geo.Edges)):
-                    s = self.create_curve(geo.Edges[i])
-                    shapes.append(s.toShape())
-                obj = doc.addObject("Part::Feature", "Edges")
-                obj.Shape = Part.Compound(shapes)
+                obj.Shape = shp
+                return obj
+            shapes = []
+            for i in range(len(geo.Edges)):
+                s = self.create_curve(geo.Edges[i])
+                shapes.append(s.toShape())
+            obj = doc.addObject("Part::Feature", "Edges")
+            obj.Shape = Part.Compound(shapes)
             return obj
 
         if isinstance(geo, r3.LineCurve):  # Must be before Curve
@@ -1359,6 +1630,51 @@ class File3dm:
             obj.Shape = self.create_curve(geo).toShape()
             return obj
 
+        if isinstance(geo, r3.Point):
+            # Rhino point object (issue #4) — visible Points::Feature
+            try:
+                return self._make_points_object(doc, [geo.Location])
+            except Exception:
+                return None
+
+        if isinstance(geo, r3.PointCloud):
+            # Rhino point cloud (issue #4) — visible Points::Feature
+            try:
+                pts = [geo.PointAt(i) for i in range(geo.Count)]
+            except Exception:
+                pts = []
+            return self._make_points_object(doc, pts)
+
+        if isinstance(geo, r3.Light):
+            # Non-geometric: FreeCAD has no light object.  Report and skip so an
+            # all-light file is not a silent blank document (issue #5).
+            try:
+                lname = geo.Name or ""
+                loc = geo.Location
+                pos = "(%.3g, %.3g, %.3g)" % (loc.X, loc.Y, loc.Z)
+            except Exception:
+                lname, pos = "", ""
+            try:
+                if geo.IsSpotLight():
+                    kind = "spot light"
+                elif geo.IsDirectionalLight():
+                    kind = "directional light"
+                elif geo.IsPointLight():
+                    kind = "point light"
+                else:
+                    kind = "light"
+            except Exception:
+                kind = "light"
+            FreeCAD.Console.PrintMessage(
+                f"  {kind}" + (f" '{lname}'" if lname else "") + f" {pos} — "
+                f"no FreeCAD equivalent; skipped\n")
+            return
+
+        if isinstance(geo, r3.TextDot):
+            FreeCAD.Console.PrintMessage(
+                "  TextDot annotation — no FreeCAD equivalent; skipped\n")
+            return
+
         if isinstance(geo, r3.Ellipse):
             FreeCAD.Console.PrintMessage("  Ellipse \u2014 not yet handled\n")
             return
@@ -1387,26 +1703,101 @@ class File3dm:
             return
 
         if isinstance(geo, r3.Extrusion):
-            height = geo.PathStart.Z - geo.PathEnd.Z
-            if geo.IsCylinder():
-                c = geo.Profile3d(0, 0.0)
-                obj = doc.addObject("Part::Cylinder", "Extrusion")
-                obj.Height = height
-                obj.Radius = c.Radius
-                obj.recompute()
+            # Extrude every closed profile into a proper solid (previously only
+            # circular and polyline profiles produced anything).  Open profiles
+            # (no caps) cannot be capped — their profile is reported instead.
+            try:
+                ps, pe = geo.PathStart, geo.PathEnd
+                dv = FreeCAD.Vector(pe.X - ps.X, pe.Y - ps.Y, pe.Z - ps.Z)
+            except Exception:
+                dv = FreeCAD.Vector(0, 0, 0)
+            try:
+                n_profiles = geo.ProfileCount
+            except Exception:
+                n_profiles = 0
+
+            def _profile_wire(i):
+                try:
+                    crv = geo.Profile3d(i, 0.0)
+                    if not crv.IsClosed:
+                        return None            # open profile — no caps
+                    shp = self.create_curve(crv).toShape()
+                except Exception:
+                    return None
+                try:
+                    if shp.ShapeType == "Edge":
+                        return Part.Wire(shp)
+                    if shp.ShapeType == "Wire":
+                        return shp
+                except Exception:
+                    pass
+                return None
+
+            def _profile_face(i):
+                try:
+                    w = _profile_wire(i)
+                    if w is None:
+                        return None
+                    f = Part.Face(w)
+                    if _ok_brep_shape(f):
+                        return f, w
+                except Exception:
+                    pass
+                try:
+                    w = _profile_wire(i)
+                    if w is None:
+                        return None
+                    f = Part.makeFilledFace(w.Edges)
+                    if _ok_brep_shape(f):
+                        return f, w
+                except Exception:
+                    pass
+                return None
+
+            outer_f = None
+            outer_w = None
+            holes = []
+            for i in range(n_profiles):
+                pf = _profile_face(i)
+                if pf is None:
+                    continue
+                f, w = pf
+                if outer_f is None:
+                    outer_f, outer_w = f, w
+                else:
+                    try:
+                        if f.Area <= outer_f.Area * 0.95:
+                            holes.append(w)
+                    except Exception:
+                        pass
+            if outer_f is None:
+                if n_profiles:
+                    FreeCAD.Console.PrintMessage(
+                        f"  Extrusion: {n_profiles} profile(s), none closed — "
+                        f"cannot cap; importing profile curves only\n")
+                return None
+            try:
+                if holes:
+                    try:
+                        base = Part.Face(outer_w, holes)
+                        if not _ok_brep_shape(base):
+                            base = outer_f
+                    except Exception:
+                        base = outer_f
+                else:
+                    base = outer_f
+                if dv.Length < 1e-9:
+                    raise ValueError("zero extrusion height")
+                shp = base.extrude(dv)
+                if shp.isNull() or not _ok_brep_shape(shp):
+                    return None
+                obj = doc.addObject("Part::Feature", "Extrusion")
+                obj.Shape = shp
                 return obj
-            for i in range(geo.ProfileCount):
-                c = geo.Profile3d(i, 0.0)
-                if c.IsPolyline():
-                    l = c.TryGetPolyline()
-                    points = [(l.PointAt(j).X, l.PointAt(j).Y, l.PointAt(j).Z)
-                              for j in range(l.SegmentCount)]
-                    points.append(points[0])
-                    obj = doc.addObject("Part::FeaturePython", "Extrusion")
-                    obj.Shape = Part.makePolygon(points)
-                    return obj
-            FreeCAD.Console.PrintMessage(f"  Extrusion h={height:.3f} \u2014 profile not handled\n")
-            return
+            except Exception as e:
+                FreeCAD.Console.PrintMessage(
+                    f"  Extrusion: profile extrusion failed ({e})\n")
+                return None
 
         if isinstance(geo, r3.Mesh):
             FreeCAD.Console.PrintMessage(
@@ -1420,12 +1811,21 @@ class File3dm:
             obj.Shape = self.create_nurbs_surface(geo).toShape()
             return obj
 
-        if isinstance(geo, r3.PointCloud):
-            FreeCAD.Console.PrintMessage("  PointCloud \u2014 not yet handled\n")
-            return
-
         if isinstance(geo, r3.Surface):
-            FreeCAD.Console.PrintMessage("  Surface \u2014 not yet handled\n")
+            # An ON_Surface the rhino3dm bindings could not fully type (e.g. a
+            # simple plane stored against an unbound subtype in old archives).
+            # Convert to NURBS — an open face is fine, no solid needed.
+            try:
+                ns = geo.ToNurbsSurface()
+                shp = self.create_nurbs_surface(ns).toShape()
+            except Exception:
+                ns, shp = None, None
+            if shp is not None and _ok_brep_shape(shp):
+                obj = doc.addObject("Part::Feature", "NurbsSurface")
+                obj.Shape = shp
+                return obj
+            FreeCAD.Console.PrintMessage(
+                "  Surface (untyped) — could not convert to NURBS; not imported\n")
             return
 
         if isinstance(geo, r3.SubD):
@@ -1445,7 +1845,8 @@ class File3dm:
                 FreeCAD.Console.PrintMessage(traceback.format_exc() + "\n")
                 return
 
-        FreeCAD.Console.PrintMessage(f"  {type(geo).__name__} \u2014 not yet handled\n")
+        FreeCAD.Console.PrintMessage(
+            f"  {type(geo).__name__} — not imported (no FreeCAD equivalent yet)\n")
 
     def printCurveInfo(self, geo):
         pass  # debug helper — retained but silenced
@@ -1552,6 +1953,7 @@ class File3dm:
                 )
             fcMesh.addFacet(*fval)
         obj.Mesh = fcMesh
+        return obj
 
 
 def process3DM(doc, filename):

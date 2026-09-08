@@ -9,17 +9,31 @@
 #
 # Notes:
 #  - Uses this addon's import3DM importer.
-#  - A file that HANGS the importer (rare; e.g. an OCCT sew hang) will hang the
-#    macro too — add its basename to SKIP below if you hit one.
-#  - An import that yields an invalid shape renders blank; that is a real import
-#    problem, not a macro bug.
+#  - import3DM >= 0.5.0 guards the OCCT sew (ImportSewFaceLimit, default 8), so
+#    a pathological file such as v5_ring.3dm imports as a compound instead of
+#    hanging the macro. SKIP is kept for genuinely un-importable files.
+#  - Objects on invisible Rhino layers are hidden on import
+#    (ImportRespectLayerVisibility), so thumbnails show what Rhino shows.
+#  - A blank thumbnail is expected for files with no geometry (empty files,
+#    light/viewport-only files) — the Report View explains why.
 
 import os, glob, base64, html, traceback
 import FreeCAD, FreeCADGui
 from PySide import QtGui
 
-SKIP = set()          # basenames to skip (e.g. {"v5_ring.3dm"})
+SKIP = set()          # basenames to skip (e.g. {"broken.3dm"})
 THUMB_W, THUMB_H = 480, 360
+
+# Pin the import preferences the gallery depends on so thumbnails are
+# reproducible regardless of the user's saved preferences.
+def _pin_prefs(mod):
+    ns = "User parameter:BaseApp/Preferences/Mod/ImportExport_3DM"
+    p = FreeCAD.ParamGet(ns)
+    p.SetBool("ImportRespectLayerVisibility", True)   # hide off-layer objects
+    p.SetBool("ImportCreateGroups", True)
+    p.SetBool("ImportMakeShell", False)
+    p.SetBool("ImportNativePrimitives", True)
+    p.SetInt("ImportSewFaceLimit", 8)                 # guarded sew (no hangs)
 
 def _import3DM():
     import importlib
@@ -32,6 +46,86 @@ def _import3DM():
         if here not in sys.path: sys.path.insert(0, here)
         import import3DM as m
     return m
+
+def _anchor_degenerate_points(doc):
+    """FreeCAD's Points view culls a point feature whose points all sit at a
+    single location (empty bounding box), so such imports would render blank in
+    a thumbnail.  Add a small temporary cube anchor at each such location so the
+    point shows; the cube lives only in this throw-away gallery document."""
+    import Part
+    try:
+        D = 0.0
+        for o in doc.Objects:
+            if o.TypeId == "Part::Feature" and o.Shape and not o.Shape.isNull():
+                bb = o.Shape.BoundBox
+                if bb.XLength < 1e90:
+                    D = max(D, bb.DiagonalLength)
+        if D <= 0:
+            D = 2.0
+        s = D * 0.04
+        for o in doc.Objects:
+            if o.TypeId != "Points::Feature":
+                continue
+            try:
+                pts = [FreeCAD.Vector(p) for p in o.Points.Points]
+            except Exception:
+                continue
+            if not pts:
+                continue
+            xs = [p.x for p in pts]; ys = [p.y for p in pts]; zs = [p.z for p in pts]
+            diag = ((max(xs) - min(xs)) ** 2 + (max(ys) - min(ys)) ** 2
+                    + (max(zs) - min(zs)) ** 2) ** 0.5
+            if diag > 1e-6:
+                continue                     # spread points render normally
+            for p in pts:
+                box = doc.addObject("Part::Feature", "PtAnchor")
+                box.Shape = Part.makeBox(s, s, s,
+                                          FreeCAD.Vector(p.x - s / 2,
+                                                         p.y - s / 2,
+                                                         p.z - s / 2))
+    except Exception:
+        pass
+
+
+def _visible_content(doc):
+    """True when the doc has any visible, non-origin geometry (incl. anchors)."""
+    try:
+        for o in doc.Objects:
+            if o.TypeId in ("App::Origin", "App::Line", "App::Plane",
+                            "App::Point", "App::Part"):
+                continue
+            if not o.ViewObject.Visibility:
+                continue
+            if o.TypeId in ("Mesh::Feature", "Points::Feature"):
+                return True
+            if o.TypeId.startswith("Part::") and hasattr(o, "Shape"):
+                sh = o.Shape
+                if sh is not None and not sh.isNull():
+                    bb = sh.BoundBox
+                    if bb.XLength < 1e90 and bb.XLength > 0:
+                        return True
+    except Exception:
+        return True
+    return False
+
+def _write_no_geometry_png(path):
+    """Render a white thumbnail with 'No geometry to import' text for files
+    whose import yields nothing (empty files, view/light-only files)."""
+    from PySide import QtGui
+    try:
+        img = QtGui.QImage(THUMB_W, THUMB_H, QtGui.QImage.Format_RGB32)
+        img.fill(QtGui.QColor("white"))
+        p = QtGui.QPainter(img)
+        p.setPen(QtGui.QColor(140, 140, 140))
+        f = p.font()
+        f.setPointSize(18)
+        p.setFont(f)
+        p.drawText(img.rect(), QtGui.Qt.AlignCenter,
+                   "No geometry to import")
+        p.end()
+        img.save(path)
+    except Exception:
+        pass
 
 def render_one(mod, path, thumbdir):
     name = os.path.basename(path)
@@ -47,10 +141,18 @@ def render_one(mod, path, thumbdir):
             if o.TypeId in ("App::Origin", "App::Plane", "App::Line"):
                 try: o.ViewObject.Visibility = False
                 except Exception: pass
-        FreeCADGui.updateGui()
-        av = FreeCADGui.ActiveDocument.ActiveView
-        av.viewIsometric(); av.fitAll()
-        av.saveImage(thumb, THUMB_W, THUMB_H, "White")
+        _anchor_degenerate_points(doc)
+        doc.recompute()
+        if not _visible_content(doc):
+            FreeCAD.Console.PrintMessage(
+                "  %s: no geometry to display (empty or non-geometric file)\n" % name)
+            _write_no_geometry_png(thumb)
+            status = "OK (no geometry)"
+        else:
+            FreeCADGui.updateGui()
+            av = FreeCADGui.ActiveDocument.ActiveView
+            av.viewIsometric(); av.fitAll()
+            av.saveImage(thumb, THUMB_W, THUMB_H, "White")
     except Exception as e:
         status = "ERR " + type(e).__name__
         FreeCAD.Console.PrintError("  %s: %s\n" % (name, e))
@@ -69,7 +171,7 @@ def build_html(rows, out):
          '.err{color:#b00}</style>',
          '<h1>3DM import gallery — %d files</h1><div class="grid">' % len(rows)]
     for name, thumb, status in rows:
-        cls = ' class="err"' if status != "OK" else ''
+        cls = ' class="err"' if status.startswith("ERR") else ''
         if thumb:
             b = base64.b64encode(open(thumb, "rb").read()).decode()
             img = '<img src="data:image/png;base64,%s">' % b
@@ -93,6 +195,7 @@ def run():
     outdir = os.path.join(d, "import_gallery")
     os.makedirs(outdir, exist_ok=True)
     mod = _import3DM()
+    _pin_prefs(mod)
     rows = []
     for i, p in enumerate(files):
         FreeCAD.Console.PrintMessage("  gallery %d/%d: %s\n" % (i + 1, len(files), os.path.basename(p)))
