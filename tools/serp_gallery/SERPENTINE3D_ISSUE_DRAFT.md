@@ -84,3 +84,30 @@ table is not being reset.
 
 See `freecad/importExport3DM/Developer_Notes/Serpentine_Gallery.md` in the
 ImportExport_3DM repo, plus `tools/serp_gallery/` there for the drivers used.
+
+
+## Related finding: Rhino layer visibility is ignored on import
+
+While preparing a fair side-by-side comparison we noticed that the `.3dm`
+importer brings **every layer in as visible**, regardless of the layer state
+saved in the file. Rhino sample files often hide their construction history
+(e.g. `v1_HumanHead1.3dm` has 25 layers, 24 of them invisible; the tutorial
+eye/eyeball construction is hidden and only the finished head layer is shown),
+so imports render the full construction mess.
+
+Evidence: for `v1_HumanHead1.3dm` the file's layer table (read with rhino3dm)
+reports 24 hidden layers, yet after `import_file` the scene reports every layer
+`visible: true` and 100% of objects `visible: true`. The importer reads layer
+visibility as `layer.GetPersistentVisibility()` in
+`fileio/rhino.py` (line ~715), which appears to always come back true for
+these files (or the per-view visibility is not what Rhino stores as
+`ON_Layer.Visible`).
+
+Impact: imports do not show what Rhino's saved view showed, so comparisons
+against other importers are skewed. Workaround used for our gallery: after
+import, hide the layers Rhino marks invisible via
+`layers {action:"visible", name: <layer>, visible: false}` over RPC.
+
+For reference, the files affected in our sample set (hidden-layer content):
+`v1/v2/v3_Camera`, `v1/v2/v3_HumanHead1`, `v1/v2/v3_MatchSrf`,
+`v1/v2/v3_Soccer`.

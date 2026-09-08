@@ -50,8 +50,10 @@ def _import3DM():
 def _anchor_degenerate_points(doc):
     """FreeCAD's Points view culls a point feature whose points all sit at a
     single location (empty bounding box), so such imports would render blank in
-    a thumbnail.  Add a small temporary cube anchor at each such location so the
-    point shows; the cube lives only in this throw-away gallery document."""
+    a thumbnail.  Add a small temporary sphere anchor at each such location so
+    the point shows; the sphere lives only in this throw-away gallery document.
+    Radius ~0.6% of the model diagonal, so it reads as a point marker, not as
+    stray cubes (as a 4%-of-diagonal box did around the soccer ball)."""
     import Part
     try:
         D = 0.0
@@ -62,7 +64,7 @@ def _anchor_degenerate_points(doc):
                     D = max(D, bb.DiagonalLength)
         if D <= 0:
             D = 2.0
-        s = D * 0.04
+        r = D * 0.006
         for o in doc.Objects:
             if o.TypeId != "Points::Feature":
                 continue
@@ -77,12 +79,14 @@ def _anchor_degenerate_points(doc):
                     + (max(zs) - min(zs)) ** 2) ** 0.5
             if diag > 1e-6:
                 continue                     # spread points render normally
+            try:
+                if not o.ViewObject.Visibility:
+                    continue                 # points on hidden Rhino layers
+            except Exception:
+                pass
             for p in pts:
-                box = doc.addObject("Part::Feature", "PtAnchor")
-                box.Shape = Part.makeBox(s, s, s,
-                                          FreeCAD.Vector(p.x - s / 2,
-                                                         p.y - s / 2,
-                                                         p.z - s / 2))
+                s = doc.addObject("Part::Feature", "PtAnchor")
+                s.Shape = Part.makeSphere(r, p)
     except Exception:
         pass
 

@@ -707,22 +707,47 @@ class File3dm:
                 "  import3DM: could not read the .3dm file (empty or invalid)\n")
             return
         has_trimmed_brep = False
+        trimmed_on_hidden = False
         try:
+            layermap = {}
+            try:
+                for l in self.f3dm.Layers:
+                    layermap[l.Index] = l
+            except Exception:
+                layermap = {}
             for o in self.f3dm.Objects:
                 g = o.Geometry
                 if isinstance(g, r3.Brep) and (len(g.Faces) > 1 or not g.IsSurface):
                     has_trimmed_brep = True
-                    break
+                    try:
+                        l = layermap.get(o.Attributes.LayerIndex)
+                        if l is not None and not l.Visible:
+                            trimmed_on_hidden = True
+                    except Exception:
+                        pass
         except Exception:
             has_trimmed_brep = False
+            trimmed_on_hidden = False
         if _HAS_TRIM_API and has_trimmed_brep:
-            # Enhanced path: whenever the compiled trim3dm extension is
-            # available, use it for the trimmed Breps — it reads the real 2D
-            # trim data, so nothing is dropped (TreeFrog's eye, HumanHead's
-            # missing surfaces).  Everything else in the file (curves, meshes,
-            # points, untrimmed single-surface Breps) is imported natively
-            # afterwards, so mixed files stay complete.
-            if self._trim3dm_available():
+            # The trim3dm-enhanced path reads the real 2D trim data (nothing is
+            # dropped — TreeFrog's eye, HumanHead's missing surfaces), but it
+            # imports every trimmed face regardless of the Rhino layer state.
+            # When any trimmed Brep sits on an invisible layer, use the native
+            # official trim path instead so the imported view matches the
+            # file's saved view (objects on hidden layers stay hidden), exactly
+            # like the layer-visibility handling everywhere else in the module.
+            if trimmed_on_hidden:
+                FreeCAD.Console.PrintMessage(
+                    "  import path: OFFICIAL Brep trim topology (native Part) "
+                    "— trimmed Breps on hidden layers; layer visibility "
+                    "respected\n")
+                self.parse_rhino_breps(doc)
+            elif self._trim3dm_available():
+                # Enhanced path: whenever the compiled trim3dm extension is
+                # available, use it for the trimmed Breps — it reads the real
+                # 2D trim data, so nothing is dropped.  Everything else in the
+                # file (curves, meshes, points, untrimmed single-surface Breps)
+                # is imported natively afterwards, so mixed files stay complete.
                 FreeCAD.Console.PrintMessage(
                     "  import path: trim3dm (enhanced trimmed Breps)\n")
                 try:
@@ -1797,8 +1822,10 @@ class File3dm:
 
         if isinstance(geo, r3.Extrusion):
             # Extrude every closed profile into a proper solid (previously only
-            # circular and polyline profiles produced anything).  Open profiles
-            # (no caps) cannot be capped — their profile is reported instead.
+            # circular and polyline profiles produced anything).  Rhino also
+            # stores open-profile extrusions (ExtrudeCrv on an open curve —
+            # an uncapped swept surface): sweep those along the path too
+            # instead of silently dropping the object.
             try:
                 ps, pe = geo.PathStart, geo.PathEnd
                 dv = FreeCAD.Vector(pe.X - ps.X, pe.Y - ps.Y, pe.Z - ps.Z)
@@ -1864,11 +1891,58 @@ class File3dm:
                     except Exception:
                         pass
             if outer_f is None:
-                if n_profiles:
-                    FreeCAD.Console.PrintMessage(
-                        f"  Extrusion: {n_profiles} profile(s), none closed — "
-                        f"cannot cap; importing profile curves only\n")
-                return None
+                if not n_profiles:
+                    return None
+                # Open-profile extrusion (no closed profile to cap): Rhino
+                # represents ExtrudeCrv-of-an-open-curve this way.  Sweep each
+                # open profile along the path to make the side surface, so the
+                # geometry shows instead of vanishing; if a profile cannot be
+                # swept, import its curve so at least that is visible.
+                swept = []
+                curve_only = 0
+                for i in range(n_profiles):
+                    shp = None
+                    try:
+                        crv = geo.Profile3d(i, 0.0)
+                        if crv is None or crv.IsClosed:
+                            continue
+                        shp = self.create_curve(crv).toShape()
+                        if shp.ShapeType == "Compound":
+                            try:
+                                shp = Part.Wire(list(shp.Edges))
+                            except Exception:
+                                pass
+                    except Exception:
+                        continue
+                    try:
+                        if shp is None or dv.Length < 1e-9:
+                            raise ValueError("no sweepable shape / zero height")
+                        ext = shp.extrude(dv)
+                        if ext is None or ext.isNull() or not _ok_brep_shape(ext):
+                            raise ValueError("invalid sweep")
+                        swept.append(ext)
+                    except Exception:
+                        # cannot sweep — import the bare profile curve instead
+                        # so the object is not silently dropped
+                        try:
+                            obj = doc.addObject("Part::Feature", "Extrusion")
+                            obj.Shape = shp
+                            curve_only += 1
+                        except Exception:
+                            pass
+                if not swept:
+                    if not curve_only:
+                        FreeCAD.Console.PrintMessage(
+                            f"  Extrusion: {n_profiles} open profile(s) could "
+                            "not be swept; skipped\n")
+                    return None
+                if len(swept) == 1:
+                    out_shape = swept[0]
+                else:
+                    out_shape = Part.Compound(swept)
+                obj = doc.addObject("Part::Feature", "Extrusion")
+                obj.Shape = out_shape
+                return obj
             try:
                 if holes:
                     try:
