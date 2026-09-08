@@ -1139,6 +1139,16 @@ class File3dm:
                 f = nsurf.toShape()
                 if _okf(f) and _within_wire(f):
                     return f, "untrimmed"
+                # tier 3b — a face with a single outer loop and no holes whose
+                # trimmed reconstruction failed everywhere is often a closed /
+                # full-extent surface (HumanHead's merged head+neck surface: the
+                # outer "wire" is only the small opening, while the full NURBS
+                # surface IS the geometry).  A single-face Brep of the same
+                # surface imports untrimmed via import_geometry with no size
+                # check, so mirror that here instead of dropping the face and
+                # leaving the model with a missing surface.
+                if not inners and _okf(f):
+                    return f, "untrimmed-full"
             except Exception:
                 pass
         return None, "fail"
