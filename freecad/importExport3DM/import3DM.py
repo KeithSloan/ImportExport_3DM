@@ -1954,20 +1954,24 @@ class File3dm:
                 obj.Shape = out_shape
                 return obj
             try:
-                if holes:
-                    try:
-                        base = Part.Face(outer_w, holes)
-                        if not _ok_brep_shape(base):
-                            base = outer_f
-                    except Exception:
-                        base = outer_f
-                else:
-                    base = outer_f
                 if dv.Length < 1e-9:
                     raise ValueError("zero extrusion height")
-                shp = base.extrude(dv)
+                shp = outer_f.extrude(dv)
                 if shp.isNull() or not _ok_brep_shape(shp):
                     return None
+                # Cut each inner (hole) profile straight through so an
+                # outer+inner-circle extrusion imports as the hollow pipe the
+                # file describes, not a filled cylinder.  The previous
+                # Part.Face(outer_w, holes) path failed for concentric circle
+                # profiles and silently fell back to a capped solid.
+                for hw in holes:
+                    try:
+                        hsolid = Part.Face(hw).extrude(dv)
+                        cut = shp.cut(hsolid)
+                        if not cut.isNull() and _ok_brep_shape(cut):
+                            shp = cut.Solids[0] if cut.Solids else cut
+                    except Exception:
+                        pass
                 obj = doc.addObject("Part::Feature", "Extrusion")
                 obj.Shape = shp
                 return obj
