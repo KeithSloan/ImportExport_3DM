@@ -1,0 +1,139 @@
+file	imp_nobj	imp_faces	imp_area	ser_nobj	ser_area	ser_over_imp	flag
+V1/v1_Camera.3dm	41	119	2841.2928	99	2841.1947	1.000	ok
+V1/v1_DeformCubes.3dm	25	30	3243.3543	25	3243.3543	1.000	ok
+V1/v1_DeformSpheres.3dm	4	4	4724.9687	4	4724.9687	1.000	ok
+V1/v1_Flow1.3dm	0	0	0.0000	4	0.0000		no-surface
+V1/v1_Flow2.3dm	3	3	1411.2787	16	1411.2787	1.000	ok
+V1/v1_Flow3.3dm	0	0	0.0000	10	985.0127		no-surface
+V1/v1_HumanHead1.3dm	22	23	5849.6612	81	5849.6597	1.000	ok
+V1/v1_HumanHead2.3dm	10	10	4096.1548	10	4096.1548	1.000	ok
+V1/v1_Hypercycloid.3dm	0	0	0.0000	37	0.0000		no-surface
+V1/v1_Lightbulb.3dm	44	110	21889.7929	60	21890.7889	1.000	ok
+V1/v1_MatchSrf.3dm	15	26	34444.8790	38	29546.7679	0.858	DROPPED
+V1/v1_Patch.3dm	63	83	14097.7692	80	14101.4689	1.000	ok
+V1/v1_RhinoLogo.3dm	6	22	1103.0082	6	761.4997	0.690	DROPPED
+V1/v1_SketchOnMesh.3dm	7	8	119510.3076	161	221299.4851	1.852	extra?
+V1/v1_Smooth.3dm	4	4	4145.4334	56	4145.4334	1.000	ok
+V1/v1_Soccer.3dm	22	26	719.9727	1371	3819.6059	5.305	extra?
+V1/v1_Speeder.3dm	2	2	3650.0078	17	3650.0078	1.000	ok
+V1/v1_SphericalSpiral.3dm	4	4	8560.2946	28	8560.2946	1.000	ok
+V1/v1_Stearman.3dm	1	1	730.0816	118	730.0816	1.000	ok
+V1/v1_T-Joint1.3dm	9	20	2094.4138	17	2049.0215	0.978	ok
+V1/v1_T-Joint2.3dm	13	18	2467.3858	39	2256.9524	0.915	DROPPED
+V1/v1_Terrain.3dm	1	1	910.4292	8	910.4292	1.000	ok
+V1/v1_UntrimmedSurfaces.3dm	11	141	8779.3396	49	8346.2617	0.951	ok
+V1/v1_five_solids.3dm	5	13	747.0445	5	746.6628	0.999	ok
+V1/v1_three_curves.3dm	0	0	0.0000	3	0.0000		no-surface
+V1/v1_three_points.3dm	0	0	0.0000	3	0.0000		no-surface
+V2/v2_23_points.3dm	0	0	0.0000	23	0.0000		no-surface
+V2/v2_5_curves.3dm	0	0	0.0000	5	0.0000		no-surface
+V2/v2_Camera.3dm	41	119	2841.2928	99	2841.1947	1.000	ok
+V2/v2_DeformCubes.3dm	25	30	3243.3543	25	3243.3543	1.000	ok
+V2/v2_DeformSpheres.3dm	4	4	4724.9687	4	4724.9687	1.000	ok
+V2/v2_Flow1.3dm	0	0	0.0000	4	0.0000		no-surface
+V2/v2_Flow2.3dm	3	3	1411.2787	16	1411.2787	1.000	ok
+V2/v2_Flow3.3dm	0	0	0.0000	10	985.0127		no-surface
+V2/v2_HumanHead1.3dm	20	20	5679.5860	79	5679.5846	1.000	ok
+V2/v2_HumanHead2.3dm	10	10	4096.1548	10	4096.1548	1.000	ok
+V2/v2_Hypercycloid.3dm	0	0	0.0000	37	0.0000		no-surface
+V2/v2_Lightbulb.3dm	44	110	21889.7929	60	21890.7889	1.000	ok
+V2/v2_MatchSrf.3dm	15	26	34444.7309	38	29546.7679	0.858	DROPPED
+V2/v2_Patch.3dm	63	83	14097.7692	80	14101.4689	1.000	ok
+V2/v2_RhinoLogo.3dm	6	22	1103.0082	6	761.4997	0.690	DROPPED
+V2/v2_SketchOnMesh.3dm	7	8	119510.3076	161	221299.4851	1.852	extra?
+V2/v2_Smooth.3dm	4	4	4145.4334	56	4145.4334	1.000	ok
+V2/v2_Soccer.3dm	22	26	719.9727	1371	3819.6059	5.305	extra?
+V2/v2_Speeder.3dm	2	2	3650.0078	17	3650.0078	1.000	ok
+V2/v2_SphericalSpiral.3dm	4	4	8560.2946	28	8560.2946	1.000	ok
+V2/v2_Stearman.3dm	1	1	730.0816	118	730.0816	1.000	ok
+V2/v2_T-Joint1.3dm	9	20	2094.4138	17	2049.0215	0.978	ok
+V2/v2_T-Joint2.3dm	13	18	2467.3858	39	2256.9524	0.915	DROPPED
+V2/v2_Terrain.3dm	1	1	910.4292	8	910.4292	1.000	ok
+V2/v2_UntrimmedSurfaces.3dm	11	141	8779.3396	49	8346.2617	0.951	ok
+V2/v2_my_brep.3dm	1	6	520.8633	1	520.8633	1.000	ok
+V2/v2_my_curves.3dm	0	0	0.0000	4	0.0000		no-surface
+V2/v2_my_mesh.3dm	0	0	0.0000	1	31.7374		no-surface
+V2/v2_my_mesh_with_material.3dm	0	0	0.0000	1	35.9876		no-surface
+V2/v2_my_spot_light.3dm	1	1	1.0000	1	1.0000	1.000	ok
+V2/v2_my_surfaces.3dm	1	1	13.8608	1	13.8608	1.000	ok
+V2/v2_my_trimmed_surface.3dm	1	1	0.2550	1	0.2550	1.000	ok
+V2/v2_my_viewports.3dm	0	0	0.0000	0	0.0000		no-surface
+V2/v2_point_with_user_Data.3dm	0	0	0.0000	1	0.0000		no-surface
+V3/v3_Camera.3dm	41	119	2853.1103	99	2853.0129	1.000	ok
+V3/v3_DeformCubes.3dm	25	30	3243.3543	25	3243.3543	1.000	ok
+V3/v3_DeformSpheres.3dm	4	4	4724.9687	4	4724.9687	1.000	ok
+V3/v3_Flow1.3dm	0	0	0.0000	4	0.0000		no-surface
+V3/v3_Flow2.3dm	3	3	1411.2787	16	1411.2787	1.000	ok
+V3/v3_Flow3.3dm	0	0	0.0000	10	985.0127		no-surface
+V3/v3_HumanHead1.3dm	22	23	5849.6612	81	5849.6597	1.000	ok
+V3/v3_HumanHead2.3dm	10	10	4096.1548	10	4096.1548	1.000	ok
+V3/v3_Hypercycloid.3dm	0	0	0.0000	37	0.0000		no-surface
+V3/v3_Lightbulb.3dm	44	110	21889.7929	60	21890.7889	1.000	ok
+V3/v3_MatchSrf.3dm	15	26	34444.7309	38	29546.7679	0.858	DROPPED
+V3/v3_Patch.3dm	63	83	14097.7692	80	14101.4689	1.000	ok
+V3/v3_RhinoLogo.3dm	6	22	1103.0082	6	761.4997	0.690	DROPPED
+V3/v3_SketchOnMesh.3dm	7	8	119510.3076	161	221299.4851	1.852	extra?
+V3/v3_Smooth.3dm	4	4	4145.4334	56	4145.4334	1.000	ok
+V3/v3_Soccer.3dm	22	26	719.9727	1371	3819.6059	5.305	extra?
+V3/v3_Speeder.3dm	2	2	3650.0078	17	3650.0078	1.000	ok
+V3/v3_SphericalSpiral.3dm	4	4	8560.2946	28	8560.2946	1.000	ok
+V3/v3_Stearman.3dm	1	1	730.0816	118	730.0816	1.000	ok
+V3/v3_T-Joint1.3dm	9	20	2094.4138	17	2049.0215	0.978	ok
+V3/v3_T-Joint2.3dm	13	18	2467.3858	39	2256.9524	0.915	DROPPED
+V3/v3_Terrain.3dm	1	1	910.4292	8	910.4292	1.000	ok
+V3/v3_UntrimmedSurfaces.3dm	11	141	8779.3396	49	8346.2617	0.951	ok
+V3/v3_my_brep.3dm	1	6	520.8633	1	520.8633	1.000	ok
+V3/v3_my_curves.3dm	0	0	0.0000	4	0.0000		no-surface
+V3/v3_my_mesh.3dm	0	0	0.0000	1	31.7374		no-surface
+V3/v3_my_mesh_with_material.3dm	0	0	0.0000	1	35.9876		no-surface
+V3/v3_my_points.3dm	0	0	0.0000	2	0.0000		no-surface
+V3/v3_my_spot_light.3dm	1	1	1.0000	1	1.0000	1.000	ok
+V3/v3_my_surfaces.3dm	1	1	13.8608	1	13.8608	1.000	ok
+V3/v3_my_trimmed_surface.3dm	1	1	0.2550	1	0.2550	1.000	ok
+V3/v3_my_viewports.3dm	0	0	0.0000	0	0.0000		no-surface
+V3/v3_point_with_user_Data.3dm	0	0	0.0000	1	0.0000		no-surface
+V4/v4_DVDCase_Solid.3dm	1	542	192.5494	2	189.9843	0.987	ok
+V4/v4_DinerMug.3dm	1	4	35457.7459	1	3860.8033	0.109	DROPPED
+V4/v4_Fluted_Cup.3dm	2	130	21599.9224	2	22402.4490	1.037	ok
+V4/v4_Gear.3dm	1	128	406.3581	1	401.3271	0.988	ok
+V4/v4_MechPartA.3dm	1	41	127.8487	1	124.8874	0.977	ok
+V4/v4_MechPartB.3dm	1	14	154.5158	1	154.5148	1.000	ok
+V4/v4_PerfumeBottle_Solid.3dm	1	5	7357.3443	2	111791.6609	15.195	extra?
+V4/v4_Prarie settle.3dm	101	1211	16598.4037	101	16598.4344	1.000	ok
+V4/v4_RhinoPhone.3dm	16	155	32211.7919	18	45380.7958	1.409	extra?
+V4/v4_SaltAndPepper.3dm	2	98	29520.6239	3	26061.0378	0.883	DROPPED
+V4/v4_SolidHandle.3dm	1	37	75341.0736	1	73451.8061	0.975	ok
+V4/v4_TreeFrog.3dm	1	83	6.6583	1	5.0764	0.762	DROPPED
+V4/v4_Wheel_PG.3dm	6	167	2913238.1036	13	2557811.5189	0.878	DROPPED
+V4/v4_WishBone.3dm	1	6	1625.7944	1	1076.6588	0.662	DROPPED
+V4/v4_example_file.3dm	5	10	2818.2246	19	5377.7028	1.908	extra?
+V5/v5_clip.3dm	14	734	31.6126	16	34.9168	1.105	extra?
+V5/v5_disk_brake.3dm	66	887	9746.4270	79	7061.8030	0.725	DROPPED
+V5/v5_dril.3dm	0	0	0.0000	23	1280.2662		no-surface
+V5/v5_example_file.3dm	7	21	11230.7509	26	22320.6678	1.987	extra?
+V5/v5_extrusions.3dm	7	20	3585.2568	17	3549.7522	0.990	ok
+V5/v5_my_brep.3dm	1	6	520.8633	1	520.8633	1.000	ok
+V5/v5_my_curves.3dm	0	0	0.0000	4	0.0000		no-surface
+V5/v5_my_mesh.3dm	0	0	0.0000	1	31.7374		no-surface
+V5/v5_my_mesh_with_material.3dm	0	0	0.0000	1	35.9876		no-surface
+V5/v5_my_point_with_user_data.3dm	0	0	0.0000	1	0.0000		no-surface
+V5/v5_my_points.3dm	0	0	0.0000	2	0.0000		no-surface
+V5/v5_my_spot_light.3dm	1	1	1.0000	1	1.0000	1.000	ok
+V5/v5_my_surfaces.3dm	1	1	13.8608	1	13.8608	1.000	ok
+V5/v5_my_trimmed_surface.3dm	1	1	0.2550	1	0.2550	1.000	ok
+V5/v5_my_viewports.3dm	0	0	0.0000	0	0.0000		no-surface
+V5/v5_rhino_logo.3dm	6	22	1105.3000	6	764.8889	0.692	DROPPED
+V5/v5_ring.3dm	1	21	43370.4499	1	43369.9276	1.000	ok
+V5/v5_teacup.3dm	6	135	22544.8675	6	22119.2750	0.981	ok
+V5/v5_teapot.3dm	3	98	57226.4776	3	54911.2811	0.960	ok
+V6/V6_annotation.3dm	0	0	0.0000	1	0.0000		no-surface
+V6/my_curves.3dm	0	0	0.0000	4	0.0000		no-surface
+V6/my_mesh.3dm	0	0	0.0000	1	31.7374		no-surface
+V6/my_mesh_with_material.3dm	0	0	0.0000	1	35.9876		no-surface
+V6/my_points.3dm	0	0	0.0000	2	0.0000		no-surface
+V6/my_spot_light.3dm	1	1	1.0000	1	1.0000	1.000	ok
+V6/my_surfaces.3dm	0	0	0.0000	0	0.0000		no-surface
+V6/my_trimmed_surface.3dm	1	1	0.2550	1	0.2550	1.000	ok
+V6/my_viewports.3dm	1	1	1259.5580	1	1259.5580	1.000	ok
+V6/v6_rhino_logo.3dm	6	22	1105.3000	6	764.8889	0.692	DROPPED
+V6/v6_rhino_subd_logo.3dm	0	0	0.0000	6	1240.0175		no-surface
