@@ -18,16 +18,18 @@ within 5% of the source, so most are fine.
 
 ## Worst cases (Serpentine area / source area)
 
-| file | ser/src area | surface lost |
-|---|---|---|
-| `v4_DinerMug` | 11% | ~89% |
-| `v4_WishBone` | 66% | ~34% |
-| `rhino_logo` (v1,v2,v3,v5,v6) | 69% | ~31% |
-| `v5_disk_brake` | 72% | ~28% |
-| `v4_TreeFrog` | 76% | ~24% |
-| `MatchSrf` (v1,v2,v3) | 86% | ~14% |
-| `v4_Wheel_PG` | 88% | ~12% |
-| `T-Joint2` (v1,v2,v3) | 91% | ~9% |
+```text
+file                          ser/src   surface lost
+v4_DinerMug                     11%        ~89%
+v4_WishBone                     66%        ~34%
+rhino_logo (v1,v2,v3,v5,v6)     69%        ~31%
+v5_disk_brake                   72%        ~28%
+v4_TreeFrog                     76%        ~24%
+MatchSrf (v1,v2,v3)             86%        ~14%
+v4_Wheel_PG                     88%        ~12%
+v4_SaltAndPepper                88%        ~12%
+T-Joint2 (v1,v2,v3)             91%         ~9%
+```
 
 Faithful controls: `v4_Gear` (99%), `v5_ring` (~100%).
 
