@@ -11,11 +11,13 @@ import. This replaces eyeballing gallery thumbnails with a number per file.
 - `serp_sweep.tsv`       - Serpentine3D: per file -> object count, total area
 - `serp_vs_import3dm.tsv` - the two joined, with ser/imp area ratio and a flag
 - `serp_area_sweep.py`   - the Serpentine sweep (headless; run with the serpentine3d venv python)
+- `join_sweeps.py`       - joins the two sweeps into `serp_vs_import3dm.tsv` plus a Markdown summary (`.md`)
 
 ## How to regenerate
 import3DM side, inside FreeCAD: for each sample, `import3DM.insert(f, doc.Name)`,
 then sum `Shape.Area` and count faces over the `Part::Feature` objects (skip the
-Origin datum planes).
+Origin datum planes). `nobj` counts every `Part::Feature` (curves included), as
+Serpentine's object count does.
 
 Serpentine side, with the serpentine3d venv python (keep the `__main__` guard -
 Serpentine's .3dm importer uses multiprocessing, whose workers re-import the
@@ -23,9 +25,43 @@ module):
 
     python3 serp_area_sweep.py <samples_dir> serp_sweep.tsv
 
-Compare: join by file name; flag where `ser_area / imp_area < 0.95`.
+Compare: `python3 join_sweeps.py` (flags `SER_LOW` < 0.95, `SER_HIGH` > 1.05).
 
-## Results - Serpentine3D 0.10.3 vs import3DM (137 sample files)
+## Outcome - Serpentine3D 0.10.7 and the import3DM trimmed-face fix
+
+The 0.10.3 run below was reported as Serpentine3D
+[issue #34](https://github.com/chisomobanzi/Serpentine3D/issues/34) (closed).
+A third reference settled it: the render meshes Rhino stores in the file,
+compared face by face. The fault was on both sides.
+
+- Serpentine3D lost area on faces running to a pole or round a seam. Fixed in
+  0.10.5; verified on 0.10.7 (TreeFrog one closed solid, rhino_logo,
+  MatchSrf and DinerMug recovered).
+- The rest was import3DM over-reading: failed trims fell back to the whole
+  untrimmed surface and holes were lost, so the "reference" was too high. Fixed
+  in `import3DM.py` (tight-bbox wire guard, reliable hole cutting, a (u, v)
+  rebuild for seam/pole loops, area cap, validated cone fit).
+
+| file | Serpentine 0.10.7 | import3DM (fixed) | Rhino mesh | import3DM (old) |
+|---|---|---|---|---|
+| v4_TreeFrog | 6.672 | 6.671 | 6.66 | 6.658 |
+| v4_WishBone | 1077.3 | 1076.6 | 1078.0 | 1625.8 |
+| v4_SaltAndPepper | 26053 | 26106 | 26054 | 29521 |
+| v5_disk_brake | 7051.6 | 7056.8 | 7029.2 | 9746.4 |
+| v5_rhino_logo | 1058.2 | 1057.5 | 1056.7 | 1105.3 |
+| v1_MatchSrf | 33404 | 33454 | - | 34445 |
+| v4_Wheel_PG | 2565262 | 2569542 | - | 2913238 |
+| v1_T-Joint2 | 2253.2 | 2257.1 | - | 2467.4 |
+| v4_DinerMug | 42281 | 34266 * | 42256 | 35458 |
+
+\* FreeCAD's `Shape.Area` (OCCT default integration) under-reads DinerMug's
+creased body; the face is trimmed correctly. Serpentine splits creased faces
+at C0 knots before integrating.
+
+`import3dm_sweep.tsv` is regenerated with the fixed importer. Regenerate
+`serp_sweep.tsv` with 0.10.7 and rerun `join_sweeps.py` for the full table.
+
+## Original results - Serpentine3D 0.10.3 vs import3DM (old) (137 sample files)
 - 83 files import faithfully (Serpentine area within 5% of import3DM)
 - 38 are curves / points (no surface to compare)
 - 17 files where Serpentine drops surface area (>5%):
@@ -46,4 +82,5 @@ Controls that import faithfully: v4_Gear (99%), v5_ring (~100%).
 
 Note: import3DM keeps every face of a multi-face Brep but does not sew Breps
 larger than `ImportSewFaceLimit` (8 faces) into a solid, so its objects are
-face-complete compounds - the area total is still the correct reference.
+face-complete compounds. At the time, the import3DM area was taken as the
+reference; as the outcome above shows, it over-read on the flagged files.
