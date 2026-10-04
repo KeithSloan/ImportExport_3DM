@@ -377,6 +377,70 @@ def _add_as_shell(doc, add_fn, shapes, labels, label='Shell'):
             add_fn(obj)
 
 
+def _tight_diag(shp):
+    """Bounding-box diagonal of *shp* from its actual geometry.  ``BoundBox``
+    on a trimmed B-spline face is the box of the surface poles, which can be
+    several times larger than the trimmed patch; comparing that against the
+    trim wire wrongly rejected correctly trimmed faces (issue #34 follow-up:
+    Wheel_PG, SaltAndPepper, disk_brake fell back to untrimmed surfaces)."""
+    try:
+        return shp.optimalBoundingBox(True, False).DiagonalLength
+    except Exception:
+        try:
+            return shp.BoundBox.DiagonalLength
+        except Exception:
+            return 0.0
+
+
+def _add_holes(face, inners):
+    """Cut each inner-loop wire out of *face* one at a time with
+    ``Part.Face(face, wire)``.  Building ``Part.Face(surface, [outer]+inners)``
+    in one go is unreliable for B-spline surfaces (invalid face, holes lost);
+    adding holes to an existing valid face is not.  Both wire orientations
+    are tried; of the valid results smaller than the face, the larger is kept
+    (the smaller is the hole region itself, i.e. the complement)."""
+    for w in inners:
+        best = None
+        # reversed() shares the edges, so their (u, v) curves survive
+        # (copy() drops them and the reversed attempt could never succeed)
+        for cand_w in (w, w.reversed()):
+            try:
+                g = Part.Face(face, cand_w)
+                if g is None or g.isNull():
+                    continue
+                if not g.isValid():
+                    try:
+                        g.fix(1e-3, 1e-3, 1e-3)
+                    except Exception:
+                        pass
+                if (g.isValid() and 1e-12 < g.Area < face.Area
+                        and (best is None or g.Area > best.Area)):
+                    best = g
+            except Exception:
+                continue
+        if best is not None:
+            face = best
+    return face
+
+
+def _with_holes(surf, outer_face, outer, inners):
+    """*outer_face* with every inner wire cut out.  The all-at-once
+    Part.Face(surf, [outer] + inners) is fast and is kept when it is valid,
+    has every hole and is smaller than the outer face; otherwise the holes are
+    cut one at a time (_add_holes), which is reliable but quadratic in the
+    hole count (disk_brake rotors)."""
+    try:
+        fa = Part.Face(surf, [outer] + inners)
+        if not fa.isValid():
+            fa.fix(1e-3, 1e-3, 1e-3)
+        if (fa.isValid() and len(fa.Wires) == 1 + len(inners)
+                and 1e-12 < fa.Area < outer_face.Area):
+            return fa
+    except Exception:
+        pass
+    return _add_holes(outer_face, inners)
+
+
 # ── guarded sew helpers (issue #10: v5_ring OCCT sew hang) ────────────────────
 
 def _ok_brep_shape(shp):
@@ -915,6 +979,234 @@ class File3dm:
             except Exception:
                 return None, edges
 
+    # ---- (u, v) trim reconstruction ------------------------------------------
+    # rhino3dm does not expose the 2-D trim curves, so each trim's 3-D edge is
+    # sampled and projected onto the surface with Surface.parameter().  On a
+    # closed surface every sample is unwrapped by continuity with the one
+    # before it, so the two sides of a seam land in different places and a
+    # loop that walks the seam twice closes properly in (u, v).  Gaps left by
+    # singular (pole) trims are bridged with straight (u, v) segments.
+
+    _UV_SAMPLES = 24
+
+    @staticmethod
+    def _loop_needs_uv(loops):
+        for lp in loops:
+            try:
+                seen = set()
+                for t in lp.Trims:
+                    ei = getattr(t, "EdgeIndex", -1)
+                    if ei is None or ei < 0:
+                        return True
+                    if ei in seen:
+                        return True
+                    seen.add(ei)
+            except Exception:
+                continue
+        return False
+
+    @staticmethod
+    def _uv_frame(face, nsurf):
+        """Parameter bounds, periods and singular sides of *face*.  Rhino's own
+        IsClosed() decides periodicity: the converted B-spline does not always
+        report itself closed (TreeFrog)."""
+        u0, u1, v0, v1 = nsurf.bounds()
+        try:
+            cu = bool(face.IsClosed(0))
+            cv = bool(face.IsClosed(1))
+        except Exception:
+            cu = cv = False
+        cu = cu or nsurf.isUClosed() or nsurf.isUPeriodic()
+        cv = cv or nsurf.isVClosed() or nsurf.isVPeriodic()
+        sing = []
+        for k in range(4):              # 0 south(v0) 1 east(u1) 2 north(v1) 3 west(u0)
+            try:
+                sing.append(bool(face.IsSingular(k)))
+            except Exception:
+                sing.append(False)
+        return (u0, u1, v0, v1, (u1 - u0) if cu else None,
+                (v1 - v0) if cv else None, sing)
+
+    def _uv_trim_points(self, brep, t, nsurf, frame):
+        """(u, v) samples of one trim, in trim direction, with the coordinate
+        left undefined at a pole (Surface.parameter() returns an arbitrary
+        value there) filled from its neighbours.  Returns (pts, on_u_seam,
+        on_v_seam) or None."""
+        u0, u1, v0, v1, pu, pv, sing = frame
+        e3 = self._bspline_edge(brep.Edges[t.EdgeIndex].ToNurbsCurve())
+        pts3 = e3.discretize(self._UV_SAMPLES)
+        if getattr(t, "IsReversed", False):
+            pts3 = pts3[::-1]
+        tu = 1e-7 * max(u1 - u0, 1e-9)
+        tv = 1e-7 * max(v1 - v0, 1e-9)
+        uv = []
+        for p in pts3:
+            u, v = nsurf.parameter(p)
+            uu, vv = u, v
+            if (sing[0] and abs(v - v0) < tv) or (sing[2] and abs(v - v1) < tv):
+                uu = None
+            if (sing[3] and abs(u - u0) < tu) or (sing[1] and abs(u - u1) < tu):
+                vv = None
+            uv.append([uu, vv])
+        for c in (0, 1):
+            idx = [i for i in range(len(uv)) if uv[i][c] is not None]
+            if not idx:
+                return None
+            for i in range(len(uv)):
+                if uv[i][c] is None:
+                    j = min(idx, key=lambda k: abs(k - i))
+                    uv[i][c] = uv[j][c]
+
+        def on_seam(c, lo, hi, per):
+            if per is None:
+                return False
+            tol = 1e-5 * per
+            return all(abs(q[c] - lo) < tol or abs(q[c] - hi) < tol for q in uv)
+        return uv, on_seam(0, u0, u1, pu), on_seam(1, v0, v1, pv)
+
+    def _uv_loop_points(self, brep, loop, nsurf, frame):
+        """List of (u, v) point runs for one loop, consecutive runs joined end
+        to start (bridges added for poles and gaps), or None."""
+        u0, u1, v0, v1, pu, pv, sing = frame
+
+        def unwrap(val, ref, per):
+            if per is None or ref is None:
+                return val
+            return val + round((ref - val) / per) * per
+
+        trims = []
+        for t in loop.Trims:
+            ei = getattr(t, "EdgeIndex", -1)
+            if ei is None or ei < 0:
+                continue                      # singular trim: bridged below
+            r = self._uv_trim_points(brep, t, nsurf, frame)
+            if r is None:
+                return None
+            trims.append(r)
+        if not trims:
+            return None
+        # start from a trim that is not on a seam, so continuity has a firm
+        # anchor (a loop made of nothing but seams and poles has none)
+        k0 = next((i for i, (_, su, sv) in enumerate(trims)
+                   if not su and not sv), 0)
+        trims = trims[k0:] + trims[:k0]
+        runs = []
+        prev = None
+        for uv, su, sv in trims:
+            # a trim lying ON a seam takes the side given by the convention
+            # Rhino and OCC share: face material is left of the trim.
+            if su:
+                up = uv[-1][1] >= uv[0][1]
+                for q in uv:
+                    q[0] = u1 if up else u0
+            if sv:
+                right = uv[-1][0] >= uv[0][0]
+                for q in uv:
+                    q[1] = v0 if right else v1
+            ref = prev if prev is not None else uv[min(1, len(uv) - 1)]
+            if not su:
+                uv[0][0] = unwrap(uv[0][0], ref[0], pu)
+            if not sv:
+                uv[0][1] = unwrap(uv[0][1], ref[1], pv)
+            for i in range(1, len(uv)):
+                if not su:
+                    uv[i][0] = unwrap(uv[i][0], uv[i - 1][0], pu)
+                if not sv:
+                    uv[i][1] = unwrap(uv[i][1], uv[i - 1][1], pv)
+            if runs and math.dist(runs[-1][-1], uv[0]) > 1e-7:
+                runs.append([runs[-1][-1], uv[0]])     # bridge (pole / gap)
+            elif runs:
+                uv[0] = runs[-1][-1]
+            runs.append(uv)
+            prev = uv[-1]
+        if math.dist(runs[0][0], runs[-1][-1]) > 1e-7:
+            runs.append([runs[-1][-1], runs[0][0]])
+        else:
+            runs[-1][-1] = runs[0][0]
+        return runs
+
+    @staticmethod
+    def _uv_signed_area(runs):
+        pts = [q for r in runs for q in r[:-1]]
+        a = 0.0
+        for i in range(len(pts)):
+            x0, y0 = pts[i]
+            x1, y1 = pts[(i + 1) % len(pts)]
+            a += x0 * y1 - x1 * y0
+        return 0.5 * a
+
+    @staticmethod
+    def _uv_runs_wire(runs, nsurf, linear=False):
+        """Wire on *nsurf* through the (u, v) runs: one interpolated B-spline
+        per run, or (linear=True) straight (u, v) segments between samples,
+        which cannot overshoot where a trim runs tangent to a seam or pole
+        (the interpolated wire can self-intersect there — TreeFrog f15)."""
+        edges = []
+        if linear:
+            for sg in runs:
+                for a, b in zip(sg[:-1], sg[1:]):
+                    if math.dist(a, b) < 1e-12:
+                        continue
+                    edges.append(Part.Geom2d.Line2dSegment(
+                        FreeCAD.Base.Vector2d(*a),
+                        FreeCAD.Base.Vector2d(*b)).toShape(nsurf))
+            return Part.Wire(edges) if edges else None
+        for sg in runs:
+            P = [FreeCAD.Base.Vector2d(x, y) for x, y in sg]
+            if len(P) == 2:
+                if math.dist(sg[0], sg[1]) < 1e-12:
+                    continue
+                c2 = Part.Geom2d.Line2dSegment(P[0], P[1])
+            else:
+                c2 = Part.Geom2d.BSplineCurve2d()
+                c2.interpolate(P)
+            edges.append(c2.toShape(nsurf))
+        if not edges:
+            return None
+        return Part.Wire(edges)
+
+    def _uv_face(self, brep, face, nsurf):
+        """Trimmed face on *nsurf* built from (u, v) loops: outer first, then
+        holes.  Returns a Part.Face or None.  The outer loop must enclose a
+        positive (u, v) area — Rhino writes outer loops anticlockwise — or the
+        seam sides were resolved wrongly.  Smooth (u, v) wires are tried
+        first, straight-segment ones when the smooth face is invalid."""
+        frame = self._uv_frame(face, nsurf)
+        outer_runs = None
+        inner_runs = []
+        for lp in face.Loops:
+            runs = self._uv_loop_points(brep, lp, nsurf, frame)
+            if runs is None:
+                continue
+            is_outer = str(getattr(lp, "LoopType", "")).endswith("Outer")
+            if is_outer and outer_runs is None:
+                if self._uv_signed_area(runs) <= 0.0:
+                    return None
+                outer_runs = runs
+            else:
+                inner_runs.append(runs)
+        if outer_runs is None:
+            return None
+        for linear in (False, True):
+            try:
+                outer = self._uv_runs_wire(outer_runs, nsurf, linear)
+                if outer is None:
+                    continue
+                f = Part.Face(nsurf, outer)
+                if not f.isValid():
+                    f.fix(1e-3, 1e-3, 1e-3)
+                if f.isNull() or not f.isValid():
+                    continue
+                inners = []
+                for r in inner_runs:
+                    w = self._uv_runs_wire(r, nsurf, linear)
+                    if w is not None:
+                        inners.append(w)
+                return _with_holes(nsurf, f, outer, inners) if inners else f
+            except Exception:
+                continue
+        return None
+
     # ---- analytic primitive fitting (ImportNativePrimitives) -----------------
     # rhino3dm exposes only the Is<Type>() flag on a Brep face, not the analytic
     # parameters, so we fit them from the underlying surface (sampled via PointAt
@@ -1004,13 +1296,24 @@ class File3dm:
                 d = _np.linalg.norm(axis)
                 if d > 1e-9:
                     axis = axis / d
-                    ha = float(_np.arctan2(abs(r1 - r0), d))
-                    cone = Part.Cone()
-                    cone.Center = FreeCAD.Vector(*c0)
-                    cone.Radius = float(r0)
-                    cone.SemiAngle = ha
-                    cone.Axis = FreeCAD.Vector(*axis)
-                    return cone, "Cone"
+                    # signed: a cone that narrows along its axis has a negative
+                    # semi-angle (abs() built the mirror-image cone — Gear)
+                    ha = float(_np.arctan2(r1 - r0, d))
+                    if 1e-9 < abs(ha) < 0.5 * math.pi - 1e-6:
+                        cone = Part.Cone()
+                        cone.Center = FreeCAD.Vector(*c0)
+                        cone.Radius = float(r0)
+                        cone.SemiAngle = ha
+                        cone.Axis = FreeCAD.Vector(*axis)
+                        # validate like the cylinder/sphere fits: the ring fit
+                        # assumes u runs round the axis, which is not always so
+                        dev = 0.0
+                        for q in P:
+                            v3 = FreeCAD.Vector(*q)
+                            cu, cv = cone.parameter(v3)
+                            dev = max(dev, (cone.value(cu, cv) - v3).Length)
+                        if dev < self._FIT_TOL:
+                            return cone, "Cone"
             elif face.IsSphere():
                 A = _np.column_stack([2 * P[:, 0], 2 * P[:, 1], 2 * P[:, 2], _np.ones(len(P))])
                 s, *_ = _np.linalg.lstsq(A, (P ** 2).sum(1), rcond=None)
@@ -1031,7 +1334,10 @@ class File3dm:
         native Part API.  Preference order per face:
           0. native analytic surface (Plane/Cylinder/Cone/Sphere) when
              ImportNativePrimitives is on and the fit is within tolerance
-          1. Part.Face on the NURBS surface (outer[, holes])
+          1. Part.Face on the NURBS surface (outer, then holes one by one)
+          1b. the same face built from the trims projected into the
+             surface's own (u, v) — used first for loops that walk a seam
+             twice or have singular (pole) trims
           2. Part.makeFilledFace(boundary) for free-form faces whose 3-D wire
              will not project onto the surface
           3. the untrimmed surface (surf.toShape()) — keeps the face
@@ -1063,13 +1369,18 @@ class File3dm:
                 return False
 
         def _mk(surf):
+            # outer boundary first, then holes one at a time (_add_holes);
+            # the all-at-once Part.Face(surf, [outer] + inners) is kept only
+            # as a last resort.
             try:
-                f = Part.Face(surf, [outer] + inners) if inners else Part.Face(surf, outer)
+                f = Part.Face(surf, outer)
                 try:
                     f.fix(1e-3, 1e-3, 1e-3)
                 except Exception:
                     pass
                 if _okf(f):
+                    if inners:
+                        f = _with_holes(surf, f, outer, inners)
                     return f
             except Exception:
                 pass
@@ -1081,39 +1392,78 @@ class File3dm:
         # is much bigger than its wire — the "spiky / untrimmed-edge" artefact
         # (v1_Camera, Soccer, …).  Faces more than a few times larger than the
         # wire are rejected so they never render as stray sheets.
-        try:
-            wd = outer.BoundBox.DiagonalLength
-        except Exception:
-            wd = 0.0
+        wd = _tight_diag(outer)
         _RATIO = 3.0
 
         def _within_wire(f):
             if not wd or wd < 1e-9:
                 return True
-            try:
-                return f.BoundBox.DiagonalLength <= _RATIO * wd
-            except Exception:
-                return True
+            fd = _tight_diag(f)
+            return (not fd) or fd <= _RATIO * wd
 
         # tier 0 — native analytic primitive.  Part.Face on a full analytic
         # surface (sphere/cylinder) can trim to the COMPLEMENT — the large rest of
         # the surface rather than the small patch — in which case the face is far
         # bigger than its outer boundary wire.  Reject that and fall back to NURBS
         # (whose domain-limited patch trims to the intended region).
-        asurf, kind = self._fit_analytic_surface(face)
-        if asurf is not None:
-            f = _mk(asurf)
-            if f is not None and _within_wire(f):
-                return f, kind
-        # tier 1 — NURBS surface
         try:
             nsurf = self.create_nurbs_surface(face.UnderlyingSurface().ToNurbsSurface())
         except Exception:
             nsurf = None
+        try:
+            full_area = nsurf.toShape().Area if nsurf is not None else None
+        except Exception:
+            full_area = None
+
+        def _sane(f):
+            # valid, about the size of its trim wire, and never larger than
+            # the whole untrimmed surface (a bad pcurve can give a face far
+            # bigger than the surface it lies on — WishBone)
+            if not (_okf(f) and _within_wire(f)):
+                return False
+            if full_area:
+                try:
+                    return f.Area <= full_area * 1.001 + 1e-9
+                except Exception:
+                    return False
+            return True
+
+        def _uv():
+            if nsurf is None:
+                return None
+            try:
+                f = self._uv_face(brep, face, nsurf)
+            except Exception:
+                f = None
+            # no wire-size check here: the face is bounded by its own (u, v)
+            # wire by construction, and for a loop that doubles back along a
+            # seam to a pole the 3-D trim wire spans only part of the face
+            if not _okf(f):
+                return None
+            if full_area and f.Area > full_area * 1.001 + 1e-9:
+                return None
+            return f
+
+        # A loop that walks a seam twice, or has a singular (pole) trim,
+        # cannot be rebuilt from its 3-D edges: build it in (u, v) first.
+        if self._loop_needs_uv(loops):
+            f = _uv()
+            if f is not None:
+                return f, "UV"
+        asurf, kind = self._fit_analytic_surface(face)
+        if asurf is not None:
+            f = _mk(asurf)
+            if f is not None and _sane(f):
+                return f, kind
+        # tier 1 — NURBS surface
         if nsurf is not None:
             f = _mk(nsurf)
-            if f is not None and _within_wire(f):
+            if f is not None and _sane(f):
                 return f, "NURBS"
+        # tier 1b — trims projected into the surface's (u, v)
+        f = _uv()
+        if f is not None:
+            return f, "UV"
         # tier 2 — filled face from the 3-D boundary
         if outer_edges:
             try:
