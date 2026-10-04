@@ -58,8 +58,11 @@ compared face by face. The fault was on both sides.
 creased body; the face is trimmed correctly. Serpentine splits creased faces
 at C0 knots before integrating.
 
-`import3dm_sweep.tsv` is regenerated with the fixed importer. Regenerate
-`serp_sweep.tsv` with 0.10.7 and rerun `join_sweeps.py` for the full table.
+Full sweep (both TSVs regenerated: fixed import3DM, Serpentine3D 0.10.7, 138
+files): 91 ok, **0 SER_LOW** (was 17), 9 SER_HIGH, 25 no-surface, 13 imp-zero.
+Every #34 file agrees within 0.2 %. SER_HIGH / imp-zero are mesh and SubD
+content (Serpentine counts mesh area; the import3DM sweep sums only
+`Part::Feature` surfaces) plus DinerMug's crease measurement.
 
 ## Original results - Serpentine3D 0.10.3 vs import3DM (old) (137 sample files)
 - 83 files import faithfully (Serpentine area within 5% of import3DM)
