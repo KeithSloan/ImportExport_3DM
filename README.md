@@ -8,6 +8,29 @@ preserved exactly, with no tessellation.
 > importing Rhino-authored *trimmed* surfaces needs the trim-topology read API
 > added in the 8.32 line — see [Requirements](#requirements)).
 
+## Documentation
+
+The [project wiki](https://github.com/KeithSloan/ImportExport_3DM/wiki) has the
+detail behind this README:
+
+- **[Import Gallery](https://github.com/KeithSloan/ImportExport_3DM/wiki/Import-Gallery)** —
+  every openNURBS V1–V6 sample file as imported by import3DM.
+- **[Serpentine Gallery](https://github.com/KeithSloan/ImportExport_3DM/wiki/Serpentine-Gallery)** —
+  the same samples checked against **[Serpentine3D](https://github.com/chisomobanzi/Serpentine3D)**,
+  an independent `.3dm` reader on a different geometry kernel: side-by-side
+  renders plus a surface-area cross-check against Serpentine3D and the render
+  meshes Rhino stores in each file. The cross-check found faults on both sides —
+  fixed in Serpentine3D ([#10](https://github.com/chisomobanzi/Serpentine3D/issues/10),
+  [#34](https://github.com/chisomobanzi/Serpentine3D/issues/34)) and in
+  import3DM's trimmed-face reconstruction (see Changes, 0.6.0).
+- **[Trimmed Surfaces](https://github.com/KeithSloan/ImportExport_3DM/wiki/Trimmed-Surfaces)** —
+  trimmed-Brep export and import, and building the optional `trim3dm` extension.
+- **[AstoCAD Forms](https://github.com/KeithSloan/ImportExport_3DM/wiki/AstoCAD-Forms)** —
+  AstoCAD's Forms workbench: Rhino SubD imported as editable Forms
+  (`importForms3DM`) and the Forms round-trip test cases.
+- **[Gallery Utility](https://github.com/KeithSloan/ImportExport_3DM/wiki/Gallery-Utility)** —
+  the macro that builds a gallery for any folder of `.3dm` files.
+
 ## Supported geometry
 
 ### Import
@@ -82,6 +105,8 @@ Open **Edit → Preferences → Import-Export → ImportExport 3DM**:
 | **Import: respect layer visibility** (`ImportRespectLayerVisibility`) | **On** | Rhino files (especially tutorials) keep construction geometry on layers that are switched *off*. When on, those objects are still imported but their FreeCAD view is hidden, so the 3D view matches what Rhino shows. Off imports everything visible. |
 | **Import: sew face limit** (`ImportSewFaceLimit`) | **8** | Maximum faces stitched into a shell/solid with OCCT `Part.Shell` during Brep import. OCCT sewing can hang un-interruptibly on some files (e.g. `v5_ring.3dm`), so larger Breps are imported as a valid compound of their faces instead — visually identical, safe against a frozen FreeCAD. Raise it to sew larger shells at your own risk. |
 | Import: try to make shell/solid | Off | After collecting a group's surfaces, attempt `Part.makeShell()` (and `makeSolid()` if closed); falls back to individual surfaces. |
+| **Import: scale to millimetres** (`ImportScaleToMillimetres`, parameter only) | **On** | Scale geometry from the file's model unit system to FreeCAD's millimetres (inches ×25.4, metres ×1000 …); the Report View states the units and factor. Unitless files are treated as millimetres. Off imports raw file coordinates (behaviour before 0.6.0). Also used by the AstoCAD Forms importer. |
+| **Export: trimmed Breps** (`ExportTrimmedBreps`, parameter only) | **On** | With the optional `trim3dm` extension built, write each face as a true trimmed Brep (outer and inner trim loops). Without trim3dm, or when off, write each face's untrimmed surface plus its boundary curves. |
 
 ### Import behaviour for non-geometric objects
 
@@ -216,6 +241,29 @@ with **multiple holes**, and a trimmed **torus**.
 Additional Rhino sample files: <https://www.rhino3d.com/download/opennurbs/6/opennurbs6samples>
 · Rhino API reference: <https://developer.rhino3d.com/api/rhinocommon/>
 
+## AstoCAD Forms (prototype)
+
+[AstoCAD](https://www.astocad.com) is an open-source soft fork of FreeCAD;
+ImportExport_3DM installs into AstoCAD's own `Mod/` folder and works there as
+in FreeCAD. AstoCAD 2026.09.01 added the **Forms** workbench — subdivision
+modelling with an editable control cage, like Rhino's SubD.
+
+- **`importForms3DM.py`** (AstoCAD only, not yet a File → Import type) imports
+  Rhino **SubD** objects as native, editable **Forms**: the SubD control net
+  and its creases become the Form's cage, instead of the fixed limit surface
+  `import3DM` produces. Other geometry is skipped and reported.
+
+  ```python
+  from freecad.importExport3DM import importForms3DM
+  created, skipped = importForms3DM.import_file("/path/model.3dm")
+  ```
+
+- **Export:** Forms are ordinary solids to `export3DM`. `testCases/Forms/`
+  holds 21 Forms models with untrimmed and trimmed `.3dm` exports and a
+  generator script; all 42 round-trip with exact face counts and areas.
+
+See the wiki page [AstoCAD Forms](https://github.com/KeithSloan/ImportExport_3DM/wiki/AstoCAD-Forms).
+
 ## Notes on SubD, other formats, and analysis
 
 - **SubD (imported as its smooth limit surface).** A subdivision surface is a
@@ -252,14 +300,51 @@ Additional Rhino sample files: <https://www.rhino3d.com/download/opennurbs/6/ope
 
 ## Changes
 
-### Unreleased — SubD import (as smooth limit surface)
+### 0.6.0 — model units, AstoCAD Forms, round-trip fixes
+
+- **Model units (import3DM 0.6.0):** imported geometry is scaled from the
+  file's unit system to millimetres (`ImportScaleToMillimetres`, default on).
+  Shared module `units3DM.py`.
+- **AstoCAD Forms:** new prototype importer `importForms3DM.py` (Rhino SubD →
+  editable Forms) and the `testCases/Forms/` round-trip test set.
+- **Trimmed-face reconstruction fixes**, found through the
+  [Serpentine3D cross-check](https://github.com/KeithSloan/ImportExport_3DM/wiki/Serpentine-Gallery):
+  correctly trimmed faces are no longer rejected for their untrimmed surface
+  (the size guard now uses the tight geometric box), holes are kept, loops at
+  seams and poles are rebuilt in the surface's (u, v), no face may exceed its
+  untrimmed surface's area, and the analytic cone fit is validated. import3DM
+  now agrees with Rhino's stored render meshes to about 0.5 %.
+- **Fixed — duplicated faces with trim3dm:** untrimmed single-surface Breps were
+  imported twice when the trim3dm path was used (27 of the 138 openNURBS
+  samples affected, e.g. `v1_T-Joint2`).
+- **Fixed — needless re-trimming:** on untrimmed files, a surface whose boundary
+  curves are its own edges is now used as-is instead of being re-trimmed, which
+  occasionally produced slivers or overhangs.
+- **Fixed — over-long boundary curves (export3DM 0.3.1):** in untrimmed export,
+  an edge using only part of a B-spline curve was written as the whole curve; it
+  is now cut to the edge's range.
+
+### 0.5.0 — import quality (issues #4–#10)
+
+- **#4 Points:** Rhino `Point` / `PointCloud` import as visible `Points::Feature`s.
+- **#5 Lights & named views:** skipped with an informative Report View message.
+- **#6 Empty files:** a file with no geometry gives an explicit warning.
+- **#7 Trim edges:** invalid faces are dropped; untrimmed fallbacks far larger
+  than their trim are rejected.
+- **#8 Wireframe:** confirmed as genuine Rhino curves/surfaces, imported faithfully.
+- **#9 Hidden layers:** objects on invisible Rhino layers are hidden
+  (`ImportRespectLayerVisibility`).
+- **#10 Sew hang:** OCCT sewing capped by `ImportSewFaceLimit` (default 8), so
+  `v5_ring` / `v4_DVDCase_Solid` no longer hang.
+
+### 0.4.0 — SubD import (as smooth limit surface)
 
 - **SubD surfaces now import** as a single smooth **limit-surface `Mesh::Feature`**
   per SubD (the subdivided Catmull–Clark limit — complete and closed), under the
   default **3DM** import type. The Rhino control-net meshes carried in the file are
   auto-hidden (relabelled “SubD control net (hidden)”) rather than cluttering the
   tree. Previously a SubD produced only a diagnostic message. New module
-  `importSubD.py`. (On the `SubD` branch.)
+  `importSubD.py`.
 - An exact **NURBS-patch + control-net cage** reconstruction is also present
   (`importSubD.makeSubD`) but is **experimental and not registered as an import
   type** — it is geometrically exact on regular quad regions yet incomplete at

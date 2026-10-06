@@ -23,7 +23,7 @@
 __title__   = "FreeCAD - ImportExport 3DM Module"
 __author__  = "Keith Sloan <keith@sloan-home.co.uk>"
 __url__     = ["https://github.com/KeithSloan/ImportExport_3DM"]
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 import FreeCAD, os, sys, Part, traceback
 from FreeCAD import Units
@@ -801,7 +801,22 @@ class rhinoModel():
         # and build a weight-preserving NurbsCurve.
         bs = None
         if isinstance(crv, Part.BSplineCurve):
+            # An edge may use only part of its B-spline (e.g. an interior edge
+            # shared by patches of one surface, Forms test case
+            # body_form_surface): bound it to the edge's own range, otherwise
+            # the whole curve is exported.  If segment() fails, fall through
+            # to discretisation, which is still the correct geometry.
             bs = crv
+            try:
+                t0, t1 = edge.FirstParameter, edge.LastParameter
+                if (abs(t0 - crv.FirstParameter) > 1e-9
+                        or abs(t1 - crv.LastParameter) > 1e-9):
+                    bs = crv.copy()
+                    bs.segment(t0, t1)
+            except Exception as e:
+                FreeCAD.Console.PrintMessage(
+                    f"  edge BSpline segment failed ({e}) - discretising\n")
+                bs = None
         elif crv is not None and hasattr(crv, 'toBSpline'):
             try:
                 bs = crv.toBSpline(edge.FirstParameter, edge.LastParameter)

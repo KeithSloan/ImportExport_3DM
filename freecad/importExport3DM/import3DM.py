@@ -23,7 +23,7 @@
 # *                                                                        *
 # **************************************************************************
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 # SubD import mode, set by the chosen import type in __init__.py:
 #   "surfaces" -> subdivided limit mesh (smooth, default)
@@ -541,6 +541,41 @@ class File3dm:
         self.path = path
         self.f3dm = r3.File3dm.Read(path)
 
+    def _curves_on_natural_boundary(self, ns_geo, curve_geos):
+        """True when *curve_geos* are just the untrimmed boundary of *ns_geo*.
+
+        export3DM's untrimmed mode segments each surface to its face's
+        parameter range and writes the face edges as curves; for an
+        iso-parametric face those curves are the surface's own natural
+        boundary, so the surface already *is* the face and trimming is
+        redundant (and has produced slivers/overhangs - Forms test case
+        body_form_surface).  Every curve sample must lie on the surface's
+        boundary edges, and the curves together must cover its perimeter."""
+        try:
+            face = self.create_nurbs_surface(ns_geo).toShape()
+            edges = [e for e in face.Edges if e.Length > 1e-12]
+            if not edges:
+                return False
+            boundary = Part.Compound(edges)
+            perimeter = sum(e.Length for e in edges)
+            tol = max(1e-6, 1e-5 * face.BoundBox.DiagonalLength)
+            n = 16
+            total = 0.0
+            for cg in curve_geos:
+                dom = cg.Domain
+                pts = []
+                for k in range(n + 1):
+                    q = cg.PointAt(dom.T0 + (dom.T1 - dom.T0) * k / n)
+                    pts.append(FreeCAD.Vector(q.X, q.Y, q.Z))
+                for q in pts:
+                    if Part.Vertex(q).distToShape(boundary)[0] > tol:
+                        return False
+                total += sum((pts[k + 1] - pts[k]).Length for k in range(n))
+            # sampled polylines slightly under-read curved edges
+            return abs(total - perimeter) <= 0.02 * perimeter
+        except Exception:
+            return False
+
     def _try_trim_reconstruction(self, doc, ns_geo, curve_geos, label):
         """Build a properly trimmed Part::Feature from a rhino3dm NurbsSurface
         and its boundary NurbsCurves using pythonOCC BRepBuilderAPI_MakeFace.
@@ -872,8 +907,13 @@ class File3dm:
 
     def _import_nontrim_objects(self, doc):
         """Import the objects the trim3dm reader does not produce: curves,
-        meshes, points, lights-free surfaces, and untrimmed single-surface
-        Breps.  Adds them under the App::Part that import_trim_3DM created."""
+        meshes, points, extrusions and other non-Brep geometry.  Adds them
+        under the App::Part that import_trim_3DM created.
+
+        trim3dm's read_trimmed_breps() returns *every* face of *every* Brep,
+        including untrimmed single-surface Breps (IsSurface == True), so all
+        Breps are skipped here; importing those again natively duplicated
+        them (Forms test cases: face_open 4 -> 5 faces, etc.)."""
         part = None
         try:
             for o in doc.Objects:
@@ -887,9 +927,7 @@ class File3dm:
             geo = r3_obj.Geometry
             attrs = r3_obj.Attributes
             if isinstance(geo, r3.Brep):
-                # multi-face or trimmed Breps were handled by trim3dm
-                if len(geo.Faces) > 1 or not geo.IsSurface:
-                    continue
+                continue            # every Brep face was read by trim3dm
             obj = self.import_geometry(doc, geo)
             if obj is None:
                 continue
@@ -1897,7 +1935,7 @@ class File3dm:
             # When make_shell is on: collect raw surface shapes and stitch after
             # the loop — no trim reconstruction, no individual doc.addObject calls.
             # When make_shell is off: existing trim-reconstruction / individual path.
-            trim_ok = trim_fail = 0
+            trim_ok = trim_fail = natural = 0
             fail_reasons = {}   # reason → count
             self._trim_gap_closed = 0
             group_surf_shapes = []
@@ -1919,6 +1957,17 @@ class File3dm:
                         FreeCAD.Console.PrintMessage(
                             f'  Shell: could not build {surf_label}: {e}\n')
                     continue
+
+                # ── surface already equals its face: no trim needed ─────────
+                if curve_r3objs and self._curves_on_natural_boundary(
+                        surf_r3obj.Geometry,
+                        [cr.Geometry for cr in curve_r3objs]):
+                    obj = self.import_geometry(doc, surf_r3obj.Geometry)
+                    if obj:
+                        obj.Label = surf_label
+                        _add(obj, surf_r3obj.Attributes)
+                        natural += 1
+                        continue
 
                 # ── existing path ─────────────────────────────────────────────
                 obj = None
@@ -1952,12 +2001,12 @@ class File3dm:
                     obj.Label = surf_label
                     _add(obj, surf_r3obj.Attributes)
 
-            if not make_shell and (trim_ok or trim_fail):
+            if not make_shell and (trim_ok or trim_fail or natural):
                 gap_total = getattr(self, '_trim_gap_closed', 0)
                 gap_note  = f" ({gap_total} gap-closed)" if gap_total else ""
                 FreeCAD.Console.PrintMessage(
-                    f"  {gname}: {trim_ok} trimmed{gap_note},"
-                    f" {trim_fail} untrimmed + curves\n"
+                    f"  {gname}: {natural} untrimmed-exact, {trim_ok} trimmed"
+                    f"{gap_note}, {trim_fail} untrimmed + curves\n"
                 )
                 for reason, count in sorted(fail_reasons.items(),
                                             key=lambda x: -x[1]):
@@ -2506,12 +2555,28 @@ def process3DM(doc, filename):
     except Exception:
         pass
     fi = File3dm(filename)
+    try:
+        from freecad.importExport3DM import units3DM
+    except ImportError:
+        import units3DM
+    scale = 1.0
+    if fi.f3dm is not None:
+        scale = units3DM.import_scale(fi.f3dm)
+        units3DM.report(fi.f3dm, scale)
+    before = set(o.Name for o in doc.Objects)
     fi.parse_objects(doc)
     try:
         import importSubD
         importSubD.hide_control_meshes(doc)   # hide control-net meshes in both modes
     except Exception:
         pass
+    if scale != 1.0:
+        # Scale everything this import created from file units to mm.  Done
+        # once here so every geometry path (native, legacy, trim3dm, SubD) is
+        # covered; see units3DM.
+        units3DM.scale_objects(
+            [o for o in doc.Objects if o.Name not in before], scale)
+        doc.recompute()
     FreeCADGui.SendMsgToActiveView("ViewFit")
 
     # pathName = os.path.dirname(os.path.normpath(filename))
