@@ -1,0 +1,1603 @@
+{
+ "meta": {
+  "generated": "2026-10-06 11:26:51",
+  "astocad": [
+   "1",
+   "1",
+   "0",
+   "20260901 (Git shallow)"
+  ],
+  "generator": "0.2.0",
+  "export3DM": "0.3.1",
+  "import3DM": "0.6.0",
+  "rhino3dm": "8.32.2",
+  "layout": {
+   "source": "<case>.FCStd",
+   "untrimmed": "untrimmed/<case>.3dm",
+   "trimmed": "trimmed/<case>.3dm"
+  }
+ },
+ "cases": {
+  "box_default": {
+   "description": "Default Form box: 2x2x2 cage, 24 bicubic patches.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/box_default.3dm",
+     "3dm": {
+      "bytes": 74291,
+      "objects": 120,
+      "types": {
+       "NurbsSurface": 24,
+       "NurbsCurve": 96
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 24,
+      "area": 1717.2334,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/box_default.3dm",
+     "3dm": {
+      "bytes": 275632,
+      "objects": 24,
+      "types": {
+       "Brep": 24
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 24,
+      "area": 1717.2334,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Box",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Box",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Parametric",
+     "MaximumDeviation": 0.023295052012678136,
+     "control_points": 26,
+     "control_faces": 24,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 24,
+      "valid": true,
+      "closed": true,
+      "volume": 6294.9489,
+      "area": 1717.2334,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "box_default.FCStd",
+   "status": "ok"
+  },
+  "box_segments_4": {
+   "description": "Denser parametric cage: 4 segments per side, 96 patches.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/box_segments_4.3dm",
+     "3dm": {
+      "bytes": 274241,
+      "objects": 480,
+      "types": {
+       "NurbsSurface": 96,
+       "NurbsCurve": 384
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 96,
+      "area": 2072.9203,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/box_segments_4.3dm",
+     "3dm": {
+      "bytes": 1074622,
+      "objects": 96,
+      "types": {
+       "Brep": 96
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 96,
+      "area": 2072.9203,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Box",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Box",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Parametric",
+     "MaximumDeviation": 0.011647526006335717,
+     "control_points": 98,
+     "control_faces": 96,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 96,
+      "valid": true,
+      "closed": true,
+      "volume": 7536.8686,
+      "area": 2072.9203,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "box_segments_4.FCStd",
+   "status": "ok"
+  },
+  "box_edited_pull": {
+   "description": "Editable cage with the top-centre control point pulled up.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/box_edited_pull.3dm",
+     "3dm": {
+      "bytes": 74299,
+      "objects": 120,
+      "types": {
+       "NurbsSurface": 24,
+       "NurbsCurve": 96
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 24,
+      "area": 1856.6917,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/box_edited_pull.3dm",
+     "3dm": {
+      "bytes": 275640,
+      "objects": 24,
+      "types": {
+       "Brep": 24
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 24,
+      "area": 1856.6917,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Box",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Box",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Editable",
+     "MaximumDeviation": 0.03038097272641448,
+     "control_points": 26,
+     "control_faces": 24,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 24,
+      "valid": true,
+      "closed": true,
+      "volume": 7120.1383,
+      "area": 1856.6917,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "box_edited_pull.FCStd",
+   "status": "ok"
+  },
+  "box_crease_sharp": {
+   "description": "Fully sharp crease (10) around the top rim: G0 patch boundaries.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/box_crease_sharp.3dm",
+     "3dm": {
+      "bytes": 74301,
+      "objects": 120,
+      "types": {
+       "NurbsSurface": 24,
+       "NurbsCurve": 96
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 24,
+      "area": 1921.0247,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/box_crease_sharp.3dm",
+     "3dm": {
+      "bytes": 275642,
+      "objects": 24,
+      "types": {
+       "Brep": 24
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 24,
+      "area": 1921.0247,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Box",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Box",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Editable",
+     "MaximumDeviation": 0.023295052012678136,
+     "control_points": 26,
+     "control_faces": 24,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 24,
+      "valid": true,
+      "closed": true,
+      "volume": 6814.1411,
+      "area": 1921.0247,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "box_crease_sharp.FCStd",
+   "status": "ok"
+  },
+  "box_crease_semi": {
+   "description": "Semi-sharp crease (3) around the top rim.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/box_crease_semi.3dm",
+     "3dm": {
+      "bytes": 120379,
+      "objects": 120,
+      "types": {
+       "NurbsSurface": 24,
+       "NurbsCurve": 96
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 24,
+      "area": 1897.4533,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/box_crease_semi.3dm",
+     "3dm": {
+      "bytes": 320184,
+      "objects": 24,
+      "types": {
+       "Brep": 24
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 24,
+      "area": 1897.4533,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Box",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Box",
+     "ConversionStatus": "Valid solid; requested deviation was not reached",
+     "CageMode": "Editable",
+     "MaximumDeviation": 0.059867804996673664,
+     "control_points": 26,
+     "control_faces": 24,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 24,
+      "valid": true,
+      "closed": true,
+      "volume": 6803.5572,
+      "area": 1897.4533,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "box_crease_semi.FCStd",
+   "status": "ok"
+  },
+  "box_symmetric_edit": {
+   "description": "YZ-symmetric box with a mirrored off-centre pull.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/box_symmetric_edit.3dm",
+     "3dm": {
+      "bytes": 74305,
+      "objects": 120,
+      "types": {
+       "NurbsSurface": 24,
+       "NurbsCurve": 96
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 24,
+      "area": 1773.0142,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/box_symmetric_edit.3dm",
+     "3dm": {
+      "bytes": 275646,
+      "objects": 24,
+      "types": {
+       "Brep": 24
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 24,
+      "area": 1773.0142,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Box",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Box",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Editable",
+     "MaximumDeviation": 0.027111521038508887,
+     "control_points": 26,
+     "control_faces": 24,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 24,
+      "valid": true,
+      "closed": true,
+      "volume": 6527.1132,
+      "area": 1773.0142,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "box_symmetric_edit.FCStd",
+   "status": "ok"
+  },
+  "box_open_top": {
+   "description": "Top cage faces deleted: open B-spline shell, no solid.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/box_open_top.3dm",
+     "3dm": {
+      "bytes": 63185,
+      "objects": 100,
+      "types": {
+       "NurbsSurface": 20,
+       "NurbsCurve": 80
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 20,
+      "area": 1554.358,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/box_open_top.3dm",
+     "3dm": {
+      "bytes": 231246,
+      "objects": 20,
+      "types": {
+       "Brep": 20
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 20,
+      "area": 1554.358,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Box",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Box",
+     "ConversionStatus": "Valid surface",
+     "CageMode": "Editable",
+     "MaximumDeviation": 0.023295052012678136,
+     "control_points": 25,
+     "control_faces": 20,
+     "shape": {
+      "solids": 0,
+      "shells": 1,
+      "faces": 20,
+      "valid": true,
+      "closed": false,
+      "volume": null,
+      "area": 1554.358,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "box_open_top.FCStd",
+   "status": "ok"
+  },
+  "box_subdivided_face": {
+   "description": "Local 2x2 subdivision of one face: T-mesh with T-junctions.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/box_subdivided_face.3dm",
+     "3dm": {
+      "bytes": 82718,
+      "objects": 139,
+      "types": {
+       "NurbsSurface": 27,
+       "NurbsCurve": 112
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 27,
+      "area": 1717.2334,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/box_subdivided_face.3dm",
+     "3dm": {
+      "bytes": 318411,
+      "objects": 27,
+      "types": {
+       "Brep": 27
+      },
+      "groups": [
+       "Form Box"
+      ]
+     },
+     "reimport": {
+      "faces": 27,
+      "area": 1717.2334,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Box",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Box",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Editable",
+     "MaximumDeviation": 0.023295052012678136,
+     "control_points": 26,
+     "control_faces": 24,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 27,
+      "valid": true,
+      "closed": true,
+      "volume": 6294.9489,
+      "area": 1717.2334,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "box_subdivided_face.FCStd",
+   "status": "ok"
+  },
+  "cylinder": {
+   "description": "",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/cylinder.3dm",
+     "3dm": {
+      "bytes": 185375,
+      "objects": 320,
+      "types": {
+       "NurbsSurface": 64,
+       "NurbsCurve": 256
+      },
+      "groups": [
+       "Form Cylinder"
+      ]
+     },
+     "reimport": {
+      "faces": 64,
+      "area": 1621.3993,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/cylinder.3dm",
+     "3dm": {
+      "bytes": 720156,
+      "objects": 64,
+      "types": {
+       "Brep": 64
+      },
+      "groups": [
+       "Form Cylinder"
+      ]
+     },
+     "reimport": {
+      "faces": 64,
+      "area": 1621.3993,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Cylinder",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Cylinder",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Parametric",
+     "MaximumDeviation": 0.015645245824032768,
+     "control_points": 66,
+     "control_faces": 64,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 64,
+      "valid": true,
+      "closed": true,
+      "volume": 5603.1003,
+      "area": 1621.3993,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "cylinder.FCStd",
+   "status": "ok"
+  },
+  "sphere": {
+   "description": "",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/sphere.3dm",
+     "3dm": {
+      "bytes": 318687,
+      "objects": 560,
+      "types": {
+       "NurbsSurface": 112,
+       "NurbsCurve": 448
+      },
+      "groups": [
+       "Form Sphere"
+      ]
+     },
+     "reimport": {
+      "faces": 112,
+      "area": 1154.313,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/sphere.3dm",
+     "3dm": {
+      "bytes": 1252860,
+      "objects": 112,
+      "types": {
+       "Brep": 112
+      },
+      "groups": [
+       "Form Sphere"
+      ]
+     },
+     "reimport": {
+      "faces": 112,
+      "area": 1154.313,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Sphere",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Sphere",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Parametric",
+     "MaximumDeviation": 0.02690664148908605,
+     "control_points": 114,
+     "control_faces": 112,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 112,
+      "valid": true,
+      "closed": true,
+      "volume": 3686.5891,
+      "area": 1154.313,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "sphere.FCStd",
+   "status": "ok"
+  },
+  "quadball": {
+   "description": "",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/quadball.3dm",
+     "3dm": {
+      "bytes": 74295,
+      "objects": 120,
+      "types": {
+       "NurbsSurface": 24,
+       "NurbsCurve": 96
+      },
+      "groups": [
+       "Form Quadball"
+      ]
+     },
+     "reimport": {
+      "faces": 24,
+      "area": 881.3725,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/quadball.3dm",
+     "3dm": {
+      "bytes": 275876,
+      "objects": 24,
+      "types": {
+       "Brep": 24
+      },
+      "groups": [
+       "Form Quadball"
+      ]
+     },
+     "reimport": {
+      "faces": 24,
+      "area": 881.3725,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Quadball",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Quadball",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Parametric",
+     "MaximumDeviation": 0.018169003920620236,
+     "control_points": 26,
+     "control_faces": 24,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 24,
+      "valid": true,
+      "closed": true,
+      "volume": 2457.0364,
+      "area": 881.3725,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "quadball.FCStd",
+   "status": "ok"
+  },
+  "torus": {
+   "description": "Genus-1 closed solid.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/torus.3dm",
+     "3dm": {
+      "bytes": 185363,
+      "objects": 320,
+      "types": {
+       "NurbsSurface": 64,
+       "NurbsCurve": 256
+      },
+      "groups": [
+       "Form Torus"
+      ]
+     },
+     "reimport": {
+      "faces": 64,
+      "area": 2291.345,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/torus.3dm",
+     "3dm": {
+      "bytes": 719760,
+      "objects": 64,
+      "types": {
+       "Brep": 64
+      },
+      "groups": [
+       "Form Torus"
+      ]
+     },
+     "reimport": {
+      "faces": 64,
+      "area": 2291.345,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Torus",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Torus",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Parametric",
+     "MaximumDeviation": 1.065815178932331e-14,
+     "control_points": 64,
+     "control_faces": 64,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 64,
+      "valid": true,
+      "closed": true,
+      "volume": 4895.945,
+      "area": 2291.345,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "torus.FCStd",
+   "status": "ok"
+  },
+  "tube": {
+   "description": "Hollow tube: solid with inner and outer skins.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/tube.3dm",
+     "3dm": {
+      "bytes": 140927,
+      "objects": 240,
+      "types": {
+       "NurbsSurface": 48,
+       "NurbsCurve": 192
+      },
+      "groups": [
+       "Form Tube"
+      ]
+     },
+     "reimport": {
+      "faces": 48,
+      "area": 1853.9851,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/tube.3dm",
+     "3dm": {
+      "bytes": 542044,
+      "objects": 48,
+      "types": {
+       "Brep": 48
+      },
+      "groups": [
+       "Form Tube"
+      ]
+     },
+     "reimport": {
+      "faces": 48,
+      "area": 1853.9851,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Tube",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Tube",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Parametric",
+     "MaximumDeviation": 5.6217203786222585e-15,
+     "control_points": 48,
+     "control_faces": 48,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 48,
+      "valid": true,
+      "closed": true,
+      "volume": 2734.3972,
+      "area": 1853.9851,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "tube.FCStd",
+   "status": "ok"
+  },
+  "face_open": {
+   "description": "Default open Form face: single-sided surface, no solid.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/face_open.3dm",
+     "3dm": {
+      "bytes": 18761,
+      "objects": 20,
+      "types": {
+       "NurbsSurface": 4,
+       "NurbsCurve": 16
+      },
+      "groups": [
+       "Form Face"
+      ]
+     },
+     "reimport": {
+      "faces": 4,
+      "area": 366.6667,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/face_open.3dm",
+     "3dm": {
+      "bytes": 53710,
+      "objects": 4,
+      "types": {
+       "Brep": 4
+      },
+      "groups": [
+       "Form Face"
+      ]
+     },
+     "reimport": {
+      "faces": 4,
+      "area": 366.6667,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Face",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Face",
+     "ConversionStatus": "Valid surface",
+     "CageMode": "Parametric",
+     "MaximumDeviation": 0.015009523011028321,
+     "control_points": 9,
+     "control_faces": 4,
+     "shape": {
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true,
+      "closed": false,
+      "volume": null,
+      "area": 366.6667,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "face_open.FCStd",
+   "status": "ok"
+  },
+  "face_thickened": {
+   "description": "Open face thickened (3 mm, sharp) into a closed solid.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/face_thickened.3dm",
+     "3dm": {
+      "bytes": 52083,
+      "objects": 80,
+      "types": {
+       "NurbsSurface": 16,
+       "NurbsCurve": 64
+      },
+      "groups": [
+       "Form Face"
+      ]
+     },
+     "reimport": {
+      "faces": 16,
+      "area": 942.0557,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/face_thickened.3dm",
+     "3dm": {
+      "bytes": 186896,
+      "objects": 16,
+      "types": {
+       "Brep": 16
+      },
+      "groups": [
+       "Form Face"
+      ]
+     },
+     "reimport": {
+      "faces": 16,
+      "area": 942.0557,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Face",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Face",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Editable",
+     "MaximumDeviation": 0.015009523011026437,
+     "control_points": 18,
+     "control_faces": 16,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 16,
+      "valid": true,
+      "closed": true,
+      "volume": 1100.0,
+      "area": 942.0557,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "face_thickened.FCStd",
+   "status": "ok"
+  },
+  "face_from_profile": {
+   "description": "Form face initialised from a closed polygon: trimmed planar face.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/face_from_profile.3dm",
+     "3dm": {
+      "bytes": 9742,
+      "objects": 6,
+      "types": {
+       "NurbsSurface": 1,
+       "NurbsCurve": 5
+      },
+      "groups": [
+       "Form Face"
+      ]
+     },
+     "reimport": {
+      "faces": 1,
+      "area": 1650.0,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/face_from_profile.3dm",
+     "3dm": {
+      "bytes": 22019,
+      "objects": 1,
+      "types": {
+       "Brep": 1
+      },
+      "groups": [
+       "Form Face"
+      ]
+     },
+     "reimport": {
+      "faces": 1,
+      "area": 1650.0,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Face",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Face",
+     "ConversionStatus": "Valid profile surface",
+     "CageMode": "Editable",
+     "MaximumDeviation": 0.0,
+     "control_points": 27,
+     "control_faces": 18,
+     "shape": {
+      "solids": 0,
+      "shells": 0,
+      "faces": 1,
+      "valid": true,
+      "closed": false,
+      "volume": null,
+      "area": 1650.0,
+      "surfaces": [
+       "Plane"
+      ]
+     }
+    }
+   ],
+   "source": "face_from_profile.FCStd",
+   "status": "ok"
+  },
+  "pipe": {
+   "description": "Form pipe along a 3D B-spline path.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/pipe.3dm",
+     "3dm": {
+      "bytes": 96495,
+      "objects": 160,
+      "types": {
+       "NurbsSurface": 32,
+       "NurbsCurve": 128
+      },
+      "groups": [
+       "Form Pipe"
+      ]
+     },
+     "reimport": {
+      "faces": 32,
+      "area": 2685.5057,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/pipe.3dm",
+     "3dm": {
+      "bytes": 364460,
+      "objects": 32,
+      "types": {
+       "Brep": 32
+      },
+      "groups": [
+       "Form Pipe"
+      ]
+     },
+     "reimport": {
+      "faces": 32,
+      "area": 2685.5057,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Pipe",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Pipe",
+     "ConversionStatus": "Valid pipe",
+     "CageMode": "Parametric",
+     "MaximumDeviation": 0.04946340947975802,
+     "control_points": 34,
+     "control_faces": 32,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 32,
+      "valid": true,
+      "closed": true,
+      "volume": 5578.5371,
+      "area": 2685.5057,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "pipe.FCStd",
+   "status": "ok"
+  },
+  "body_form_surface": {
+   "description": "PartDesign Form Surface on a box top face, 3x3, centre pulled.\n    Mixed planar + B-spline solid.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/body_form_surface.3dm",
+     "3dm": {
+      "bytes": 87127,
+      "objects": 78,
+      "types": {
+       "NurbsSurface": 14,
+       "NurbsCurve": 64
+      },
+      "groups": [
+       "Body"
+      ]
+     },
+     "reimport": {
+      "faces": 14,
+      "area": 2272.386,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/body_form_surface.3dm",
+     "3dm": {
+      "bytes": 328124,
+      "objects": 14,
+      "types": {
+       "Brep": 14
+      },
+      "groups": [
+       "Body"
+      ]
+     },
+     "reimport": {
+      "faces": 14,
+      "area": 2272.3858,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Body",
+     "type_id": "PartDesign::Body",
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true,
+      "closed": true,
+      "volume": 6465.5451,
+      "area": 2272.3859,
+      "surfaces": [
+       "BSplineSurface",
+       "Plane"
+      ]
+     },
+     "forms": [
+      {
+       "label": "Form Surface",
+       "type_id": "PartDesign::FeaturePython",
+       "FormType": "Forms::Surface",
+       "ConversionStatus": "Valid solid with subdivided form surface",
+       "CageMode": "Editable",
+       "MaximumDeviation": 0.0,
+       "control_points": 16,
+       "control_faces": 9
+      }
+     ]
+    }
+   ],
+   "source": "body_form_surface.FCStd",
+   "status": "ok"
+  },
+  "body_additive_quadball": {
+   "description": "Additive Form quadball fused onto a PartDesign base plate.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/body_additive_quadball.3dm",
+     "3dm": {
+      "bytes": 54907,
+      "objects": 98,
+      "types": {
+       "NurbsSurface": 18,
+       "NurbsCurve": 80
+      },
+      "groups": [
+       "Body"
+      ]
+     },
+     "reimport": {
+      "faces": 18,
+      "area": 5024.1938,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/body_additive_quadball.3dm",
+     "3dm": {
+      "bytes": 223276,
+      "objects": 18,
+      "types": {
+       "Brep": 18
+      },
+      "groups": [
+       "Body"
+      ]
+     },
+     "reimport": {
+      "faces": 18,
+      "area": 5024.2314,
+      "all_valid": true,
+      "area_rel_err": 7e-06
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Body",
+     "type_id": "PartDesign::Body",
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 18,
+      "valid": true,
+      "closed": true,
+      "volume": 17228.5182,
+      "area": 5024.1938,
+      "surfaces": [
+       "BSplineSurface",
+       "Plane"
+      ]
+     },
+     "forms": [
+      {
+       "label": "Additive Form Quadball",
+       "type_id": "PartDesign::FeatureAdditivePython",
+       "FormType": "Forms::Quadball",
+       "ConversionStatus": "Valid solid",
+       "CageMode": "Parametric",
+       "MaximumDeviation": 0.018169003920620236,
+       "control_points": 26,
+       "control_faces": 24
+      }
+     ]
+    }
+   ],
+   "source": "body_additive_quadball.FCStd",
+   "status": "ok"
+  },
+  "body_subtractive_sphere": {
+   "description": "Subtractive Form sphere cut from a PartDesign base plate.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/body_subtractive_sphere.3dm",
+     "3dm": {
+      "bytes": 180649,
+      "objects": 326,
+      "types": {
+       "NurbsSurface": 62,
+       "NurbsCurve": 264
+      },
+      "groups": [
+       "Body"
+      ]
+     },
+     "reimport": {
+      "faces": 62,
+      "area": 5093.7088,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/body_subtractive_sphere.3dm",
+     "3dm": {
+      "bytes": 730138,
+      "objects": 62,
+      "types": {
+       "Brep": 62
+      },
+      "groups": [
+       "Body"
+      ]
+     },
+     "reimport": {
+      "faces": 62,
+      "area": 5093.7214,
+      "all_valid": true,
+      "area_rel_err": 2e-06
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Body",
+     "type_id": "PartDesign::Body",
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 62,
+      "valid": true,
+      "closed": true,
+      "volume": 14156.7054,
+      "area": 5093.7088,
+      "surfaces": [
+       "BSplineSurface",
+       "Plane"
+      ]
+     },
+     "forms": [
+      {
+       "label": "Subtractive Form Sphere",
+       "type_id": "PartDesign::FeatureSubtractivePython",
+       "FormType": "Forms::Sphere",
+       "ConversionStatus": "Valid solid",
+       "CageMode": "Parametric",
+       "MaximumDeviation": 0.02690664148908605,
+       "control_points": 114,
+       "control_faces": 112
+      }
+     ]
+    }
+   ],
+   "source": "body_subtractive_sphere.FCStd",
+   "status": "ok"
+  },
+  "multi_placed": {
+   "description": "Three Forms in one file, translated and rotated.",
+   "exports": {
+    "untrimmed": {
+     "status": "ok",
+     "file": "untrimmed/multi_placed.3dm",
+     "3dm": {
+      "bytes": 318905,
+      "objects": 560,
+      "types": {
+       "NurbsSurface": 112,
+       "NurbsCurve": 448
+      },
+      "groups": [
+       "Form Box",
+       "Form Torus",
+       "Form Quadball"
+      ]
+     },
+     "reimport": {
+      "faces": 112,
+      "area": 4889.951,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    },
+    "trimmed": {
+     "status": "ok",
+     "file": "trimmed/multi_placed.3dm",
+     "3dm": {
+      "bytes": 1252902,
+      "objects": 112,
+      "types": {
+       "Brep": 112
+      },
+      "groups": [
+       "Form Box",
+       "Form Torus",
+       "Form Quadball"
+      ]
+     },
+     "reimport": {
+      "faces": 112,
+      "area": 4889.951,
+      "all_valid": true,
+      "area_rel_err": 0.0
+     }
+    }
+   },
+   "objects": [
+    {
+     "label": "Form Box",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Box",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Parametric",
+     "MaximumDeviation": 0.023295052012678136,
+     "control_points": 26,
+     "control_faces": 24,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 24,
+      "valid": true,
+      "closed": true,
+      "volume": 6294.9489,
+      "area": 1717.2334,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    },
+    {
+     "label": "Form Torus",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Torus",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Parametric",
+     "MaximumDeviation": 1.065815178932331e-14,
+     "control_points": 64,
+     "control_faces": 64,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 64,
+      "valid": true,
+      "closed": true,
+      "volume": 4895.945,
+      "area": 2291.345,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    },
+    {
+     "label": "Form Quadball",
+     "type_id": "Part::FeaturePython",
+     "FormType": "Forms::Quadball",
+     "ConversionStatus": "Valid solid",
+     "CageMode": "Parametric",
+     "MaximumDeviation": 0.018169003920620236,
+     "control_points": 26,
+     "control_faces": 24,
+     "shape": {
+      "solids": 1,
+      "shells": 1,
+      "faces": 24,
+      "valid": true,
+      "closed": true,
+      "volume": 2457.0364,
+      "area": 881.3725,
+      "surfaces": [
+       "BSplineSurface"
+      ]
+     }
+    }
+   ],
+   "source": "multi_placed.FCStd",
+   "status": "ok"
+  }
+ }
+}
